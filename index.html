@@ -32,6 +32,11 @@
             <option value="easy">쉬움</option><option value="normal" selected>보통</option><option value="hard">어려움</option>
           </select>
         </label>
+        <label>덱 구성
+          <select id="in-deck">
+            <option value="mixed" selected>기본 + 내 카드</option><option value="custom">내 카드만 (15장 이상)</option>
+          </select>
+        </label>
         <label>속도
           <select id="in-speed">
             <option value="1.6">느림</option><option value="1" selected>보통</option><option value="0.5">빠름</option>
@@ -43,8 +48,39 @@
         <button class="btn primary big" id="btn-start">출근하기</button>
         <button class="btn open-rules">규칙</button>
         <button class="btn" id="btn-gallery">카드 도감</button>
+        <button class="btn" id="btn-workshop">🛠 카드 공방</button>
       </div>
+      <div id="custom-info" class="muted small"></div>
       <div id="stats" class="muted"></div>
+    </div>
+  </section>
+
+  <!-- 카드 공방 -->
+  <section id="workshop" class="screen">
+    <header class="topbar">
+      <div class="brand">🛠 카드 공방</div>
+      <div class="muted small">만든 카드는 이 브라우저에 저장되고 덱에 섞여 나옵니다</div>
+      <div class="spacer"></div>
+      <button class="btn small" id="ws-back">← 타이틀</button>
+    </header>
+    <div class="ws-wrap">
+      <aside class="ws-side">
+        <div class="ws-tools">
+          <button class="btn small" id="ws-new">+ 새 카드</button>
+          <button class="btn small" id="ws-export">⬇ 내보내기</button>
+          <label class="btn small">⬆ 가져오기<input type="file" accept="application/json,.json" id="ws-import" hidden></label>
+        </div>
+        <div id="ws-list"></div>
+      </aside>
+      <main class="ws-main">
+        <div id="ws-preview"></div>
+        <div id="ws-form"></div>
+        <div class="ws-actions">
+          <button class="btn primary" id="ws-save">💾 저장</button>
+          <button class="btn" id="ws-copy">복제</button>
+          <button class="btn" id="ws-del">삭제</button>
+        </div>
+      </main>
     </div>
   </section>
 
@@ -127,7 +163,19 @@
             <li>거래 카드는 막을 수 없습니다. 「도금된 명패」·「은박 결재판」처럼 약하지만 비싼 카드는 강매용입니다.</li>
           </ul></li>
         <li>할 게 없으면 <b>기도</b>: 카드 1장 + 정신력 10을 얻고 턴을 마칩니다. 손패가 가득 차 있으면 가장 쓸모없는 카드 1장을 버리고 뽑습니다.</li>
-        <li>상태 이상 — 🩸출혈: 공격할 때마다 5 피해 · 🔥화상: 턴 시작 시 5 피해 · 💔취약: 방어력 절반 · 💫기절: 다음 턴 건너뜀 · 😱공황: 다음 턴 건너뜀</li>
+        <li><b>키워드</b> — 대부분 <b>위력/횟수</b>를 가집니다. 다시 부여하면 위력과 횟수가 각각 더해지고, 횟수가 0이 되면 사라집니다.
+          <ul>
+            <li>🔥 <b>화상</b>: 턴 시작 시 위력만큼 피해, 횟수 -1</li>
+            <li>🩸 <b>출혈</b>: 공격할 때마다 위력만큼 피해, 횟수 -1</li>
+            <li>〰 <b>진동</b>: 「진동 폭발」을 당하면 위력만큼 정신력 감소. 턴 종료 시 횟수 -1</li>
+            <li>💥 <b>파열</b>: 피격될 때마다 위력만큼 추가 피해, 횟수 -1</li>
+            <li>🌊 <b>침잠</b>: 피격될 때마다 위력만큼 정신력 감소(정신력이 바닥이면 대신 피해), 횟수 -1</li>
+            <li>🌬 <b>호흡</b> (자신): 적중 시 위력×5% 확률로 치명타(피해 1.2배), 치명타가 나면 횟수 -1. 턴 종료 시 횟수 -1</li>
+            <li>⚡ <b>충전</b> (자신): 최대 20. 「충전 소모」 코인 효과에 쓰임. 턴 종료 시 -1</li>
+            <li>💔 취약: 방어력 절반 · 💫 기절: 다음 턴 건너뜀 · 😱 공황: 다음 턴 건너뜀</li>
+          </ul></li>
+        <li><b>코인</b> — 카드마다 코인 개수와 코인별 위력·효과가 다를 수 있습니다. 「앞면 적중 시」 효과는 그 코인이 앞면이고 공격이 적중했을 때만 발동합니다.</li>
+        <li><b>🛠 카드 공방</b> — 타이틀에서 직접 카드를 만들 수 있습니다 (종류, 사진, 코인별 위력과 효과).</li>
         <li><b>🌙 뒷골목의 밤</b> — 100턴(모든 플레이어 턴 합산)부터 시작. 카드를 뽑을 때 30% 확률로 카드 대신
           <b>🧹 청소부</b>(10 / 20 / 30 피해) 또는 <b>🛢 연료통</b>(HP 10 / 정신력 10 / 10원 중 하나)이 나옵니다. 손패가 가득 차 있어도, 기도·구매·보급 요청서로 뽑을 때도 마찬가지!</li>
       </ul>
@@ -147,7 +195,9 @@
   <div id="toasts"></div>
 
   <script src="js/data.js"></script>
+  <script src="js/keywords.js"></script>
   <script src="js/game.js"></script>
   <script src="js/ai.js"></script>
+  <script src="js/editor.js"></script>
 </body>
 </html>

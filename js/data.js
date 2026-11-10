@@ -13,11 +13,10 @@
 //  item   : kind: heal|sp|won|cure|draw|gamble, power
 //  trade  : kind: buy(매입)|sell(매각)|exchange(환전) — 상대가 막을 수 없음
 //
-//  fx 목록
-//    bleed      : 피해를 입힌 대상에 출혈(3턴) — 공격할 때마다 5 피해
-//    burn       : 화상(3턴) — 턴 시작 시 5 피해
-//    fragile    : 취약(2턴) — 방어력 절반
-//    stun       : 기절 — 다음 턴 건너뜀
+//  coins  : (선택) 코인 목록 [{ power, fx: [효과] }]. 없으면 기본 코인(RULES.coins개 × coinPower)
+//  effects: (선택) 카드 효과 [{ when: use|hit, target: enemy|self, key, pot, cnt }] — 키워드는 js/keywords.js 참고
+//
+//  fx 목록 (특수 능력)
 //    pierce     : 방어구 무시 (합 불가)
 //    lifesteal  : 준 피해의 절반만큼 회복
 //    drainsp    : 대상 정신력 10 흡수
@@ -38,16 +37,8 @@ const ATTR = {
   all:    { name: '전속성', color: '#7dffb3', icon: '◈' },
 };
 
-const STATUS = {
-  bleed:   { name: '출혈', icon: '🩸', desc: '공격할 때마다 5 피해 (3턴)' },
-  burn:    { name: '화상', icon: '🔥', desc: '턴 시작 시 5 피해 (3턴)' },
-  fragile: { name: '취약', icon: '💔', desc: '방어력 절반 (2턴)' },
-  stun:    { name: '기절', icon: '💫', desc: '다음 턴을 건너뜀' },
-  panic:   { name: '공황', icon: '😱', desc: '정신력 붕괴 — 다음 턴을 건너뜀' },
-};
 
 const FX_TEXT = {
-  bleed: '출혈 부여', burn: '화상 부여', fragile: '취약 부여', stun: '기절 부여',
   pierce: '방어 무시', lifesteal: '흡혈', drainsp: '정신력 흡수 10', mind: '정신 피해 10', all: '전체 공격',
   twice: '2회 공격', holy: '자신 HP +5', reflect: '피해 절반 반사', nullify: '공격 무효화',
 };
@@ -56,41 +47,51 @@ const CARDS = [
   // ---------------- 무기 ----------------
   { id: 'w_cutter',   type: 'weapon', name: '사무용 커터',        attr: 'phys',   atk: 5,  count: 4, price: 3, rarity: 1, plus: true,
     flavor: '19층 서류 보관실에서 지급되는 기본 지급품.' },
-  { id: 'w_notice',   type: 'weapon', name: '해고 통지서',        attr: 'phys',   atk: 8,  count: 3, price: 5, rarity: 1, fx: ['bleed'],
+  { id: 'w_notice',   type: 'weapon', name: '해고 통지서',        attr: 'phys',   atk: 8,  count: 3, price: 5, rarity: 1, effects: [{ when: 'hit', target: 'enemy', key: 'bleed', pot: 3, cnt: 3 }],
     flavor: '종이에 베인 상처는 생각보다 오래간다.' },
-  { id: 'w_hammer',   type: 'weapon', name: '결산 망치',          attr: 'phys',   atk: 12, count: 3, price: 6, rarity: 1,
+  { id: 'w_hammer',   type: 'weapon', name: '결산 망치',          attr: 'phys',   atk: 12, count: 3, price: 6, rarity: 1, effects: [{ when: 'hit', target: 'enemy', key: 'tremor', pot: 3, cnt: 3 }],
     flavor: '분기 마감마다 무언가를 내려친다.' },
-  { id: 'w_lantern',  type: 'weapon', name: '철야의 랜턴',        attr: 'fire',   atk: 10, count: 3, price: 6, rarity: 1, fx: ['burn'],
+  { id: 'w_lantern',  type: 'weapon', name: '철야의 랜턴',        attr: 'fire',   atk: 10, count: 3, price: 6, rarity: 1, effects: [{ when: 'hit', target: 'enemy', key: 'burn', pot: 3, cnt: 3 }],
     flavor: '꺼지지 않는 불. 퇴근하지 못한 자들의 온기.' },
-  { id: 'w_contract', type: 'weapon', name: '서리 낀 계약서',     attr: 'frost',  atk: 10, count: 3, price: 6, rarity: 1, fx: ['fragile'],
+  { id: 'w_contract', type: 'weapon', name: '서리 낀 계약서',     attr: 'frost',  atk: 10, count: 3, price: 6, rarity: 1, effects: [{ when: 'hit', target: 'enemy', key: 'fragile', pot: 0, cnt: 2 }],
     flavor: '서명한 순간부터 손끝이 얼어붙는다.' },
-  { id: 'w_mask',     type: 'weapon', name: '웃는 면접관의 가면', attr: 'shadow', atk: 8,  count: 2, price: 8, rarity: 2, fx: ['drainsp'],
+  { id: 'w_mask',     type: 'weapon', name: '웃는 면접관의 가면', attr: 'shadow', atk: 8,  count: 2, price: 8, rarity: 2, fx: ['drainsp'], effects: [{ when: 'hit', target: 'enemy', key: 'sinking', pot: 2, cnt: 2 }],
     flavor: '“당신의 장점을 말해 보세요.”' },
-  { id: 'w_clock',    type: 'weapon', name: '멈춘 시계탑의 바늘', attr: 'phys',   atk: 16, count: 2, price: 10, rarity: 2,
+  { id: 'w_clock',    type: 'weapon', name: '멈춘 시계탑의 바늘', attr: 'phys',   atk: 16, count: 2, price: 10, rarity: 2, effects: [{ when: 'hit', target: 'enemy', key: 'rupture', pot: 2, cnt: 2 }],
     flavor: '정오에서 영원히 멈춘 시침.' },
   { id: 'w_censer',   type: 'weapon', name: '순례자의 향로',      attr: 'light',  atk: 12, count: 2, price: 8, rarity: 2, fx: ['holy'],
     flavor: '흔들 때마다 뒷골목에 성가가 울린다.' },
   { id: 'w_saw',      type: 'weapon', name: '반복 재생 톱날',     attr: 'phys',   atk: 6,  count: 2, price: 6, rarity: 2, fx: ['twice'],
+    coins: [{ power: 2, fx: [{ when: 'heads', target: 'enemy', key: 'rupture', pot: 1, cnt: 1 }] }, { power: 2, fx: [{ when: 'heads', target: 'enemy', key: 'rupture', pot: 1, cnt: 1 }] }, { power: 2, fx: [{ when: 'heads', target: 'enemy', key: 'rupture', pot: 1, cnt: 1 }] }],
     flavor: '같은 장면을, 같은 상처를, 몇 번이고.' },
-  { id: 'w_scythe',   type: 'weapon', name: '연체 이자의 낫',     attr: 'shadow', atk: 14, count: 2, price: 10, rarity: 2, fx: ['lifesteal'],
+  { id: 'w_scythe',   type: 'weapon', name: '연체 이자의 낫',     attr: 'shadow', atk: 14, count: 2, price: 10, rarity: 2, fx: ['lifesteal'], effects: [{ when: 'hit', target: 'enemy', key: 'sinking', pot: 3, cnt: 2 }],
     flavor: '빌린 것은 반드시 피로 돌려받는다.' },
   { id: 'w_shredder', type: 'weapon', name: '폐기물 분쇄기',      attr: 'phys',   atk: 8,  count: 2, price: 8, rarity: 2, fx: ['all'],
     flavor: '구역 전체를 대상으로 하는 정리 해고.' },
   { id: 'w_needle',   type: 'weapon', name: '재봉사의 바늘',      attr: 'phys',   atk: 4,  count: 3, price: 4, rarity: 1, plus: true, fx: ['pierce'],
     flavor: '갑옷의 이음새만을 찾아 들어간다.' },
-  { id: 'w_vine',     type: 'weapon', name: '녹슨 철조망 채찍',   attr: 'phys',   atk: 6,  count: 2, price: 4, rarity: 1, plus: true, fx: ['bleed'],
+  { id: 'w_vine',     type: 'weapon', name: '녹슨 철조망 채찍',   attr: 'phys',   atk: 6,  count: 2, price: 4, rarity: 1, plus: true, effects: [{ when: 'hit', target: 'enemy', key: 'bleed', pot: 2, cnt: 2 }],
     flavor: '둥지 바깥 울타리에서 뜯어 왔다.' },
   { id: 'w_plate',    type: 'weapon', name: '도금된 명패',        attr: 'phys',   atk: 2,  count: 2, price: 20, rarity: 2,
     flavor: '휘두르기엔 볼품없지만, 팔면 꽤 값이 나간다.' },
   { id: 'w_tray',     type: 'weapon', name: '은박 결재판',        attr: 'phys',   atk: 2,  count: 2, price: 12, rarity: 1,
     flavor: '결재 서류보다 판 자체가 더 비싸다.' },
-  { id: 'w_gavel',    type: 'weapon', name: '판결의 의사봉',      attr: 'phys',   atk: 10, count: 2, price: 7, rarity: 2, fx: ['mind'],
+  { id: 'w_gavel',    type: 'weapon', name: '판결의 의사봉',      attr: 'phys',   atk: 10, count: 2, price: 7, rarity: 2, fx: ['mind'], effects: [{ when: 'hit', target: 'enemy', key: 'tremorBurst', pot: 0, cnt: 0 }],
     flavor: '탕, 탕, 탕. 세 번 울리면 누구든 고개를 숙인다.' },
-  { id: 'w_bell',     type: 'weapon', name: '얼어붙은 종',        attr: 'frost',  atk: 14, count: 1, price: 10, rarity: 2, fx: ['stun'],
+  { id: 'w_baton',    type: 'weapon', name: '과충전 경찰봉',      attr: 'phys',   atk: 8,  count: 2, price: 8, rarity: 2,
+    effects: [{ when: 'use', target: 'self', key: 'charge', pot: 0, cnt: 4 }],
+    coins: [{ power: 2, fx: [] }, { power: 2, fx: [{ when: 'use', target: 'self', key: 'chargeBoost', pot: 6, cnt: 3 }] }],
+    flavor: '스위치를 누를 때마다 손잡이가 뜨거워진다.' },
+  { id: 'w_dagger',   type: 'weapon', name: '숨 고르는 단검',     attr: 'phys',   atk: 6,  count: 2, price: 6, rarity: 1,
+    effects: [{ when: 'use', target: 'self', key: 'poise', pot: 3, cnt: 3 }],
+    coins: [{ power: 2, fx: [] }, { power: 2, fx: [] }, { power: 2, fx: [{ when: 'heads', target: 'self', key: 'poise', pot: 2, cnt: 1 }] }],
+    flavor: '들이쉬고, 내쉬고, 찌른다.' },
+  { id: 'w_bell',     type: 'weapon', name: '얼어붙은 종',        attr: 'frost',  atk: 14, count: 1, price: 10, rarity: 2, effects: [{ when: 'hit', target: 'enemy', key: 'stun', pot: 0, cnt: 0 }],
     flavor: '종이 울리면 모두가 그 자리에 멈춘다.' },
   { id: 'w_spear',    type: 'weapon', name: '별을 삼킨 창',       attr: 'light',  atk: 24, count: 1, price: 20, rarity: 3,
+    coins: [{ power: 4, fx: [] }, { power: 4, fx: [] }], effects: [{ when: 'use', target: 'self', key: 'poise', pot: 3, cnt: 2 }],
     flavor: '하늘에서 별 하나가 사라진 밤, 이 창이 발견되었다.' },
-  { id: 'w_furnace',  type: 'weapon', name: '심장 용광로',        attr: 'fire',   atk: 18, count: 1, price: 20, rarity: 3, fx: ['burn', 'all'],
+  { id: 'w_furnace',  type: 'weapon', name: '심장 용광로',        attr: 'fire',   atk: 18, count: 1, price: 20, rarity: 3, fx: ['all'], effects: [{ when: 'hit', target: 'enemy', key: 'burn', pot: 4, cnt: 3 }],
     flavor: '한 사람의 열망이 도시 한 블록을 태웠다.' },
 
   // ---------------- 방어구 ----------------
@@ -116,9 +117,9 @@ const CARDS = [
     flavor: '반려. 그 공격은 없었던 일이 된다.' },
 
   // ---------------- E.G.O (정신력 소모) ----------------
-  { id: 'e_flame',    type: 'ego', name: '소각 의식',     kind: 'attack', attr: 'fire',   cost: 10, power: 12, count: 2, price: 0, rarity: 1, fx: ['burn'],
+  { id: 'e_flame',    type: 'ego', name: '소각 의식',     kind: 'attack', attr: 'fire',   cost: 10, power: 12, count: 2, price: 0, rarity: 1, effects: [{ when: 'hit', target: 'enemy', key: 'burn', pot: 4, cnt: 2 }],
     flavor: '기밀문서와 함께.' },
-  { id: 'e_frost',    type: 'ego', name: '냉동 보관',     kind: 'attack', attr: 'frost',  cost: 10, power: 12, count: 2, price: 0, rarity: 1, fx: ['fragile'],
+  { id: 'e_frost',    type: 'ego', name: '냉동 보관',     kind: 'attack', attr: 'frost',  cost: 10, power: 12, count: 2, price: 0, rarity: 1, effects: [{ when: 'hit', target: 'enemy', key: 'fragile', pot: 0, cnt: 2 }],
     flavor: '나중에 처리하기로 한다.' },
   { id: 'e_judge',    type: 'ego', name: '최종 감사',     kind: 'attack', attr: 'light',  cost: 20, power: 22, count: 1, price: 0, rarity: 2,
     flavor: '모든 비리가 빛 아래 드러난다.' },

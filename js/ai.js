@@ -19,12 +19,13 @@ const cpuCanEgo = (p, c) => canPayEgo(p, c) && p.sp - c.cost >= egoFloor();
 
 function scoreAttack(p, cards) {
   const info = buildAttack(cards);
-  let s = info.atk;
+  let s = info.atk + info.coinMax * headChance(p.sp);
+  const fxs = info.effects.concat(...info.coins.map((c) => c.fx || []));
+  for (const e of fxs) s += KEYWORDS[e.key] ? ((e.pot || 0) + (e.cnt || 0)) * 0.6 : e.key === 'stun' ? 6 : 2;
   if (info.fx.includes('twice')) s *= 1.8;
   if (info.fx.includes('all')) s *= 0.7 * Math.max(1, others(p).length);
   if (info.fx.includes('pierce')) s += 4;
-  for (const f of ['bleed', 'burn', 'fragile', 'lifesteal', 'drainsp', 'mind', 'holy']) if (info.fx.includes(f)) s += 3;
-  if (info.fx.includes('stun')) s += 6;
+  for (const f of ['lifesteal', 'drainsp', 'mind', 'holy']) if (info.fx.includes(f)) s += 3;
   if (cards[0].type === 'ego') s -= cards[0].cost * 0.35; // 정신력 아끼기
   return s;
 }
@@ -35,7 +36,7 @@ async function cpuTurn(p) {
   // 1) 무료 행동: 회복 / 정화 / 정신력 / 돈 / 드로우 / 구매
   for (let guard = 0; guard < 6 && p.alive; guard++) {
     const hpLow = p.hp <= (G.difficulty === 'hard' ? 40 : 30);
-    const hasBad = p.status.bleed || p.status.burn || p.status.fragile;
+    const hasBad = ['bleed', 'burn', 'rupture', 'sinking', 'fragile'].some((k) => has(p, k) && p.status[k].pot + p.status[k].cnt >= 3);
     const card = (pred) => p.hand.find(pred);
     let use = null;
     if (hpLow) use = card((c) => c.type === 'item' && c.kind === 'heal') || card((c) => c.type === 'ego' && c.kind === 'heal' && cpuCanEgo(p, c));
@@ -44,6 +45,7 @@ async function cpuTurn(p) {
     if (!use) use = card((c) => c.type === 'item' && c.kind === 'won');
     if (!use && p.hand.length <= 5 && (!isNight() || p.hp > 40)) use = card((c) => c.type === 'item' && c.kind === 'draw');
     if (!use && G.difficulty !== 'easy' && p.hp > 40 && Math.random() < 0.3) use = card((c) => c.kind === 'gamble');
+    if (!use && Math.random() < 0.5) use = card((c) => c.type === 'item' && c.kind === 'custom' && !itemHitsEnemy(c));
     if (use) {
       await useSupport(p, use, p);
       if (checkEnd()) return;
@@ -74,7 +76,7 @@ async function cpuTurn(p) {
   for (const e of p.hand.filter((c) => c.type === 'ego' && c.kind === 'attack' && cpuCanEgo(p, c))) options.push([e]);
 
   // 3) 방해 E.G.O
-  const disrupt = p.hand.filter((c) => c.type === 'ego' && (c.kind === 'stun' || c.kind === 'steal') && cpuCanEgo(p, c));
+  const disrupt = p.hand.filter((c) => (c.type === 'ego' && (c.kind === 'stun' || c.kind === 'steal') && cpuCanEgo(p, c)) || itemHitsEnemy(c));
 
   // 거래 후보: 강매(판매 킬 포함) / 매입
   const trade = cpuTradeOption(p);
@@ -130,7 +132,7 @@ function cpuDefend(p, info, attacker) {
   const chosen = [];
   for (const c of normal) {
     chosen.push(c);
-    const st = clashStats(info.atk, attacker.sp, armorDef(p, chosen), p.sp, true);
+    const st = clashStats(info.atk, info.coins, attacker.sp, armorDef(p, chosen), defenseCoins(chosen), p.sp, true);
     if (st.win + st.tie >= want) break;
   }
   // 여유가 있으면 방어구를 1장만 쓰기
@@ -147,6 +149,7 @@ function cardUse(c) {
   if (c.type === 'armor') return c.def * 0.9 + fxOf(c).length * 6;
   if (c.type === 'ego') return 14;
   if (c.type === 'trade') return 8;
+  if (c.kind === 'custom') return 8;
   return { heal: (c.power || 0) * 0.8, sp: c.power * 0.6, won: 6, cure: 6, draw: 8, gamble: 6 }[c.kind] || 5;
 }
 
