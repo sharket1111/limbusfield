@@ -1,30 +1,30 @@
 // ============================================================
 //  카드 데이터 — 이 파일만 고치면 카드 이름/수치/장수를 바꿀 수 있습니다.
 // ============================================================
-//  type   : weapon(무기) | armor(방어구) | miracle(기적) | item(도구)
+//  type   : weapon(무기) | armor(방어구) | ego(E.G.O) | item(도구)
 //  attr   : phys(물리) | fire(화염) | frost(냉기) | light(광휘) | shadow(그림자) | all(모든 속성 — 방어구 전용)
 //  count  : 덱에 들어가는 장수
 //  rarity : 1 일반 / 2 희귀 / 3 전설 (테두리 색만 다름)
 //
 //  weapon : atk, plus(보조 무기 — 다른 무기에 덧붙일 수 있음), fx(특수효과)
 //  armor  : def, fx
-//  miracle: mp(소모), kind: attack|heal|cure|steal|stun|mpgain, power, fx
-//  item   : kind: heal|mp|sp|cure|draw|gamble, power
+//  ego    : cost(소모 정신력), kind: attack|heal|cure|steal|stun, power, fx
+//  item   : kind: heal|sp|won|cure|draw|gamble, power
 //
 //  fx 목록
-//    bleed      : 피해를 입힌 대상에 출혈(3턴) — 공격할 때마다 3 피해
-//    burn       : 화상(3턴) — 턴 시작 시 3 피해
+//    bleed      : 피해를 입힌 대상에 출혈(3턴) — 공격할 때마다 5 피해
+//    burn       : 화상(3턴) — 턴 시작 시 5 피해
 //    fragile    : 취약(2턴) — 방어력 절반
 //    stun       : 기절 — 다음 턴 건너뜀
-//    pierce     : 방어구 무시
+//    pierce     : 방어구 무시 (합 불가)
 //    lifesteal  : 준 피해의 절반만큼 회복
-//    drainmp    : 대상 MP 3 흡수
+//    drainsp    : 대상 정신력 10 흡수
+//    mind       : 피해를 입힌 대상의 정신력 -10
 //    all        : 다른 모든 플레이어 공격
 //    twice      : 같은 대상에게 2회 공격
-//    holy       : 공격 후 자신 HP 3 회복
-//    mind       : 피해를 입힌 대상의 정신력 -5
-//    reflect    : (방어구) 막은 피해의 절반을 공격자에게 되돌림
-//    nullify    : (방어구) 공격을 완전히 무효화 (관통 제외)
+//    holy       : 공격 후 자신 HP 5 회복
+//    reflect    : (방어구) 합에서 이기면 막은 피해의 절반을 공격자에게 되돌림
+//    nullify    : (방어구) 합 없이 공격을 완전히 무효화 (관통 제외)
 // ============================================================
 
 const ATTR = {
@@ -37,105 +37,107 @@ const ATTR = {
 };
 
 const STATUS = {
-  bleed:   { name: '출혈', icon: '🩸', desc: '공격할 때마다 3 피해 (3턴)' },
-  burn:    { name: '화상', icon: '🔥', desc: '턴 시작 시 3 피해 (3턴)' },
+  bleed:   { name: '출혈', icon: '🩸', desc: '공격할 때마다 5 피해 (3턴)' },
+  burn:    { name: '화상', icon: '🔥', desc: '턴 시작 시 5 피해 (3턴)' },
   fragile: { name: '취약', icon: '💔', desc: '방어력 절반 (2턴)' },
   stun:    { name: '기절', icon: '💫', desc: '다음 턴을 건너뜀' },
-  panic:   { name: '공황', icon: '😱', desc: '정신력 붕괴 — 다음 턴을 건너뛰고 합을 할 수 없음' },
+  panic:   { name: '공황', icon: '😱', desc: '정신력 붕괴 — 다음 턴을 건너뜀' },
 };
 
 const FX_TEXT = {
   bleed: '출혈 부여', burn: '화상 부여', fragile: '취약 부여', stun: '기절 부여',
-  pierce: '방어 무시', lifesteal: '흡혈', drainmp: 'MP 흡수 3', all: '전체 공격',
-  twice: '2회 공격', mind: '정신 피해 5', holy: '자신 HP +3', reflect: '피해 절반 반사', nullify: '공격 무효화',
+  pierce: '방어 무시', lifesteal: '흡혈', drainsp: '정신력 흡수 10', mind: '정신 피해 10', all: '전체 공격',
+  twice: '2회 공격', holy: '자신 HP +5', reflect: '피해 절반 반사', nullify: '공격 무효화',
 };
 
 const CARDS = [
   // ---------------- 무기 ----------------
-  { id: 'w_cutter',   type: 'weapon', name: '사무용 커터',        attr: 'phys',   atk: 3,  count: 4, rarity: 1, plus: true,
+  { id: 'w_cutter',   type: 'weapon', name: '사무용 커터',        attr: 'phys',   atk: 5,  count: 4, rarity: 1, plus: true,
     flavor: '19층 서류 보관실에서 지급되는 기본 지급품.' },
-  { id: 'w_notice',   type: 'weapon', name: '해고 통지서',        attr: 'phys',   atk: 4,  count: 3, rarity: 1, fx: ['bleed'],
+  { id: 'w_notice',   type: 'weapon', name: '해고 통지서',        attr: 'phys',   atk: 8,  count: 3, rarity: 1, fx: ['bleed'],
     flavor: '종이에 베인 상처는 생각보다 오래간다.' },
-  { id: 'w_hammer',   type: 'weapon', name: '결산 망치',          attr: 'phys',   atk: 6,  count: 3, rarity: 1,
+  { id: 'w_hammer',   type: 'weapon', name: '결산 망치',          attr: 'phys',   atk: 12, count: 3, rarity: 1,
     flavor: '분기 마감마다 무언가를 내려친다.' },
-  { id: 'w_lantern',  type: 'weapon', name: '철야의 랜턴',        attr: 'fire',   atk: 5,  count: 3, rarity: 1, fx: ['burn'],
+  { id: 'w_lantern',  type: 'weapon', name: '철야의 랜턴',        attr: 'fire',   atk: 10, count: 3, rarity: 1, fx: ['burn'],
     flavor: '꺼지지 않는 불. 퇴근하지 못한 자들의 온기.' },
-  { id: 'w_contract', type: 'weapon', name: '서리 낀 계약서',     attr: 'frost',  atk: 5,  count: 3, rarity: 1, fx: ['fragile'],
+  { id: 'w_contract', type: 'weapon', name: '서리 낀 계약서',     attr: 'frost',  atk: 10, count: 3, rarity: 1, fx: ['fragile'],
     flavor: '서명한 순간부터 손끝이 얼어붙는다.' },
-  { id: 'w_mask',     type: 'weapon', name: '웃는 면접관의 가면', attr: 'shadow', atk: 4,  count: 2, rarity: 2, fx: ['drainmp', 'mind'],
+  { id: 'w_mask',     type: 'weapon', name: '웃는 면접관의 가면', attr: 'shadow', atk: 8,  count: 2, rarity: 2, fx: ['drainsp'],
     flavor: '“당신의 장점을 말해 보세요.”' },
-  { id: 'w_clock',    type: 'weapon', name: '멈춘 시계탑의 바늘', attr: 'phys',   atk: 8,  count: 2, rarity: 2,
+  { id: 'w_clock',    type: 'weapon', name: '멈춘 시계탑의 바늘', attr: 'phys',   atk: 16, count: 2, rarity: 2,
     flavor: '정오에서 영원히 멈춘 시침.' },
-  { id: 'w_censer',   type: 'weapon', name: '순례자의 향로',      attr: 'light',  atk: 6,  count: 2, rarity: 2, fx: ['holy'],
+  { id: 'w_censer',   type: 'weapon', name: '순례자의 향로',      attr: 'light',  atk: 12, count: 2, rarity: 2, fx: ['holy'],
     flavor: '흔들 때마다 뒷골목에 성가가 울린다.' },
-  { id: 'w_saw',      type: 'weapon', name: '반복 재생 톱날',     attr: 'phys',   atk: 3,  count: 2, rarity: 2, fx: ['twice'],
+  { id: 'w_saw',      type: 'weapon', name: '반복 재생 톱날',     attr: 'phys',   atk: 6,  count: 2, rarity: 2, fx: ['twice'],
     flavor: '같은 장면을, 같은 상처를, 몇 번이고.' },
-  { id: 'w_scythe',   type: 'weapon', name: '연체 이자의 낫',     attr: 'shadow', atk: 7,  count: 2, rarity: 2, fx: ['lifesteal'],
+  { id: 'w_scythe',   type: 'weapon', name: '연체 이자의 낫',     attr: 'shadow', atk: 14, count: 2, rarity: 2, fx: ['lifesteal'],
     flavor: '빌린 것은 반드시 피로 돌려받는다.' },
-  { id: 'w_shredder', type: 'weapon', name: '폐기물 분쇄기',      attr: 'phys',   atk: 4,  count: 2, rarity: 2, fx: ['all'],
+  { id: 'w_shredder', type: 'weapon', name: '폐기물 분쇄기',      attr: 'phys',   atk: 8,  count: 2, rarity: 2, fx: ['all'],
     flavor: '구역 전체를 대상으로 하는 정리 해고.' },
-  { id: 'w_needle',   type: 'weapon', name: '재봉사의 바늘',      attr: 'phys',   atk: 2,  count: 3, rarity: 1, plus: true, fx: ['pierce'],
+  { id: 'w_needle',   type: 'weapon', name: '재봉사의 바늘',      attr: 'phys',   atk: 4,  count: 3, rarity: 1, plus: true, fx: ['pierce'],
     flavor: '갑옷의 이음새만을 찾아 들어간다.' },
-  { id: 'w_vine',     type: 'weapon', name: '녹슨 철조망 채찍',   attr: 'phys',   atk: 3,  count: 2, rarity: 1, plus: true, fx: ['bleed'],
+  { id: 'w_vine',     type: 'weapon', name: '녹슨 철조망 채찍',   attr: 'phys',   atk: 6,  count: 2, rarity: 1, plus: true, fx: ['bleed'],
     flavor: '둥지 바깥 울타리에서 뜯어 왔다.' },
-  { id: 'w_gavel',    type: 'weapon', name: '판결의 의사봉',      attr: 'phys',   atk: 5,  count: 2, rarity: 2, fx: ['mind'],
+  { id: 'w_gavel',    type: 'weapon', name: '판결의 의사봉',      attr: 'phys',   atk: 10, count: 2, rarity: 2, fx: ['mind'],
     flavor: '탕, 탕, 탕. 세 번 울리면 누구든 고개를 숙인다.' },
-  { id: 'w_bell',     type: 'weapon', name: '얼어붙은 종',        attr: 'frost',  atk: 7,  count: 1, rarity: 2, fx: ['stun'],
+  { id: 'w_bell',     type: 'weapon', name: '얼어붙은 종',        attr: 'frost',  atk: 14, count: 1, rarity: 2, fx: ['stun'],
     flavor: '종이 울리면 모두가 그 자리에 멈춘다.' },
-  { id: 'w_spear',    type: 'weapon', name: '별을 삼킨 창',       attr: 'light',  atk: 12, count: 1, rarity: 3,
+  { id: 'w_spear',    type: 'weapon', name: '별을 삼킨 창',       attr: 'light',  atk: 24, count: 1, rarity: 3,
     flavor: '하늘에서 별 하나가 사라진 밤, 이 창이 발견되었다.' },
-  { id: 'w_furnace',  type: 'weapon', name: '심장 용광로',        attr: 'fire',   atk: 10, count: 1, rarity: 3, fx: ['burn', 'all'],
+  { id: 'w_furnace',  type: 'weapon', name: '심장 용광로',        attr: 'fire',   atk: 18, count: 1, rarity: 3, fx: ['burn', 'all'],
     flavor: '한 사람의 열망이 도시 한 블록을 태웠다.' },
 
   // ---------------- 방어구 ----------------
-  { id: 'a_badge',    type: 'armor', name: '사원증 목걸이',      attr: 'all',    def: 2, count: 4, rarity: 1,
+  { id: 'a_badge',    type: 'armor', name: '사원증 목걸이',      attr: 'all',    def: 4,  count: 5, rarity: 1,
     flavor: '적어도 신원 확인은 된다.' },
-  { id: 'a_suit',     type: 'armor', name: '방탄 정장',          attr: 'phys',   def: 4, count: 4, rarity: 1,
+  { id: 'a_suit',     type: 'armor', name: '방탄 정장',          attr: 'phys',   def: 8,  count: 6, rarity: 1,
     flavor: '해결사 사무소 표준 복장.' },
-  { id: 'a_coat',     type: 'armor', name: '방화 코트',          attr: 'fire',   def: 6, count: 2, rarity: 1,
+  { id: 'a_coat',     type: 'armor', name: '방화 코트',          attr: 'fire',   def: 12, count: 3, rarity: 1,
     flavor: '그을음 냄새가 빠지지 않는다.' },
-  { id: 'a_cloak',    type: 'armor', name: '눈보라 망토',        attr: 'frost',  def: 6, count: 2, rarity: 1,
+  { id: 'a_cloak',    type: 'armor', name: '눈보라 망토',        attr: 'frost',  def: 12, count: 3, rarity: 1,
     flavor: '추위를 추위로 막는다.' },
-  { id: 'a_goggle',   type: 'armor', name: '차광 고글',          attr: 'light',  def: 6, count: 2, rarity: 1,
+  { id: 'a_goggle',   type: 'armor', name: '차광 고글',          attr: 'light',  def: 12, count: 3, rarity: 1,
     flavor: '너무 밝은 것은 보지 않는 편이 낫다.' },
-  { id: 'a_veil',     type: 'armor', name: '그림자 장막',        attr: 'shadow', def: 6, count: 2, rarity: 1,
+  { id: 'a_veil',     type: 'armor', name: '그림자 장막',        attr: 'shadow', def: 12, count: 3, rarity: 1,
     flavor: '보이지 않으면 해칠 수도 없다.' },
-  { id: 'a_shield',   type: 'armor', name: '강화 진압 방패',      attr: 'phys',   def: 7, count: 2, rarity: 2,
+  { id: 'a_shield',   type: 'armor', name: '강화 진압 방패',      attr: 'phys',   def: 14, count: 3, rarity: 2,
     flavor: '경비 부서에서 몰래 가져왔다.' },
-  { id: 'a_umbrella', type: 'armor', name: '찢어진 장우산',      attr: 'all',    def: 3, count: 3, rarity: 1,
+  { id: 'a_umbrella', type: 'armor', name: '찢어진 장우산',      attr: 'all',    def: 6,  count: 4, rarity: 1,
     flavor: '비는 못 막아도 칼은 조금 막는다.' },
-  { id: 'a_mirror',   type: 'armor', name: '되묻는 거울',        attr: 'all',    def: 4, count: 2, rarity: 2, fx: ['reflect'],
+  { id: 'a_mirror',   type: 'armor', name: '되묻는 거울',        attr: 'all',    def: 8,  count: 2, rarity: 2, fx: ['reflect'],
     flavor: '“그건 당신 이야기 아닌가요?”' },
-  { id: 'a_charm',    type: 'armor', name: '무효 결재 도장',     attr: 'all',    def: 0, count: 1, rarity: 3, fx: ['nullify'],
+  { id: 'a_charm',    type: 'armor', name: '무효 결재 도장',     attr: 'all',    def: 0,  count: 1, rarity: 3, fx: ['nullify'],
     flavor: '반려. 그 공격은 없었던 일이 된다.' },
 
-  // ---------------- 기적 ----------------
-  { id: 'm_flame',    type: 'miracle', name: '소각 의식',     kind: 'attack', attr: 'fire',   mp: 3, power: 6, count: 2, rarity: 1, fx: ['burn'],
+  // ---------------- E.G.O (정신력 소모) ----------------
+  { id: 'e_flame',    type: 'ego', name: '소각 의식',     kind: 'attack', attr: 'fire',   cost: 10, power: 12, count: 2, rarity: 1, fx: ['burn'],
     flavor: '기밀문서와 함께.' },
-  { id: 'm_frost',    type: 'miracle', name: '냉동 보관',     kind: 'attack', attr: 'frost',  mp: 3, power: 6, count: 2, rarity: 1, fx: ['fragile'],
+  { id: 'e_frost',    type: 'ego', name: '냉동 보관',     kind: 'attack', attr: 'frost',  cost: 10, power: 12, count: 2, rarity: 1, fx: ['fragile'],
     flavor: '나중에 처리하기로 한다.' },
-  { id: 'm_judge',    type: 'miracle', name: '최종 감사',     kind: 'attack', attr: 'light',  mp: 6, power: 11, count: 1, rarity: 2,
+  { id: 'e_judge',    type: 'ego', name: '최종 감사',     kind: 'attack', attr: 'light',  cost: 20, power: 22, count: 1, rarity: 2,
     flavor: '모든 비리가 빛 아래 드러난다.' },
-  { id: 'm_whisper',  type: 'miracle', name: '복도의 속삭임', kind: 'attack', attr: 'shadow', mp: 5, power: 5, count: 2, rarity: 2, fx: ['all', 'mind'],
+  { id: 'e_whisper',  type: 'ego', name: '복도의 속삭임', kind: 'attack', attr: 'shadow', cost: 15, power: 10, count: 2, rarity: 2, fx: ['all', 'mind'],
     flavor: '누가 먼저 시작했는지는 아무도 모른다.' },
-  { id: 'm_mend',     type: 'miracle', name: '응급 봉합',     kind: 'heal',   mp: 3, power: 10, count: 3, rarity: 1,
+  { id: 'e_mend',     type: 'ego', name: '응급 봉합',     kind: 'heal',   cost: 10, power: 20, count: 3, rarity: 1,
     flavor: '흉터는 남겠지만.' },
-  { id: 'm_purify',   type: 'miracle', name: '정화 절차',     kind: 'cure',   mp: 2, count: 2, rarity: 1,
+  { id: 'e_purify',   type: 'ego', name: '정화 절차',     kind: 'cure',   cost: 5, count: 2, rarity: 1,
     flavor: '모든 이상 상태를 초기화합니다.' },
-  { id: 'm_steal',    type: 'miracle', name: '자산 압류',     kind: 'steal',  mp: 4, count: 2, rarity: 2,
+  { id: 'e_steal',    type: 'ego', name: '자산 압류',     kind: 'steal',  cost: 12, count: 2, rarity: 2,
     flavor: '대상의 카드 1장을 무작위로 빼앗는다.' },
-  { id: 'm_stun',     type: 'miracle', name: '정신 오염',     kind: 'stun',   mp: 4, count: 2, rarity: 2,
-    flavor: '대상은 다음 턴 아무것도 할 수 없다.' },
+  { id: 'e_stun',     type: 'ego', name: '정신 오염',     kind: 'stun',   cost: 12, count: 2, rarity: 2,
+    flavor: '대상은 다음 턴 아무것도 할 수 없다. (대상 정신력 -10)' },
 
   // ---------------- 도구 ----------------
-  { id: 'i_pill',     type: 'item', name: '진통제',         kind: 'heal',   power: 6,  count: 4, rarity: 1,
+  { id: 'i_pill',     type: 'item', name: '진통제',         kind: 'heal',   power: 12, count: 4, rarity: 1,
     flavor: '아픈 건 내일의 나에게.' },
-  { id: 'i_ampoule',  type: 'item', name: '고농축 앰플',     kind: 'heal',   power: 15, count: 1, rarity: 2,
+  { id: 'i_ampoule',  type: 'item', name: '고농축 앰플',     kind: 'heal',   power: 30, count: 1, rarity: 2,
     flavor: '부작용은 서류에 적혀 있지 않다.' },
-  { id: 'i_coffee',   type: 'item', name: '야근용 캔커피',   kind: 'mp',     power: 6,  count: 3, rarity: 1,
+  { id: 'i_coffee',   type: 'item', name: '야근용 캔커피',   kind: 'sp',     power: 10, count: 3, rarity: 1,
     flavor: '세 번째 캔부터 손이 떨린다.' },
-  { id: 'i_calm',     type: 'item', name: '안정제 패치',     kind: 'sp',     power: 8,  count: 3, rarity: 1,
-    flavor: '정신력 +8. 붙이는 순간 세상이 조금 조용해진다.' },
+  { id: 'i_calm',     type: 'item', name: '안정제 패치',     kind: 'sp',     power: 20, count: 2, rarity: 1,
+    flavor: '붙이는 순간 세상이 조금 조용해진다.' },
+  { id: 'i_wallet',   type: 'item', name: '주운 지갑',       kind: 'won',    power: 20, count: 2, rarity: 1,
+    flavor: '주인은 아마 더 이상 필요 없을 것이다.' },
   { id: 'i_antidote', type: 'item', name: '해독 키트',       kind: 'cure',             count: 2, rarity: 1,
     flavor: '대부분의 것에 효과가 있다. 대부분.' },
   { id: 'i_supply',   type: 'item', name: '보급 요청서',     kind: 'draw',   power: 2,  count: 3, rarity: 1,
@@ -144,20 +146,33 @@ const CARDS = [
     flavor: '발신인 불명. 열어 볼까?' },
 ];
 
+// ---------------- 뒷골목의 밤 이벤트 ----------------
+// 밤이 되면 카드를 뽑을 때 일정 확률로 아래 이벤트가 대신 나옵니다 (손패에 들어가지 않고 즉시 발동).
+const NIGHT_EVENTS = {
+  sweeper: { name: '청소부', icon: '🧹', weight: 6, damages: [10, 20, 30],
+    flavor: '밤의 뒷골목에서는 아무도 살아남지 못한다.' },
+  fuel:    { name: '연료통', icon: '🛢', weight: 4, gains: [['hp', 10], ['sp', 10], ['won', 10]],
+    flavor: '청소부들이 흘리고 간 것. 무언가에 쓸 수 있다.' },
+};
+
 const RULES = {
-  maxHp: 40,
-  startMp: 8,
-  maxMp: 20,
+  maxHp: 100,
   startHand: 7,
   maxHand: 10,
   drawPerTurn: 1,
-  // 정신력 / 합
-  minSp: -20,
-  maxSp: 20,
-  coins: 3,        // 합에서 던지는 코인 수
-  coinPower: 2,    // 앞면 1개당 위력
-  overtimeRound: 25, // 이 라운드부터 매 턴 피해 (교착 방지)
+  // 정신력
+  minSp: -45,
+  maxSp: 45,
+  // 합 (무기 vs 방어구)
+  coins: 3,          // 공격·방어 양쪽이 던지는 코인 수
+  coinPower: 2,      // 앞면 1개당 위력
+  // 돈
+  startWon: 20,
+  buyCost: 10,       // 보급 구매 1회 가격 (카드 1장)
+  // 뒷골목의 밤
+  nightTurn: 100,    // 이 턴(모든 플레이어 턴 합산)부터 밤 시작
+  nightChance: 0.3,  // 밤에 카드를 뽑을 때 이벤트가 나올 확률
 };
 
-const CPU_NAMES = ['해결사 K', '수습사원 R', '청소부 J', '중개인 M', '사서 Q', '경비원 T', '연구원 V'];
+const CPU_NAMES = ['해결사 K', '수습사원 R', '배달부 J', '중개인 M', '사서 Q', '경비원 T', '연구원 V'];
 const CPU_AVATARS = ['🦊', '🐺', '🦉', '🐍', '🦇', '🐈‍⬛', '🕷'];

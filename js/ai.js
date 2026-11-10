@@ -8,41 +8,55 @@ function cpuChooseTarget(p) {
   if (G.difficulty === 'easy') return pick(opp);
   // 체력이 낮은 상대를 노리되, 가끔은 무작위
   if (Math.random() < 0.25) return pick(opp);
-  return [...opp].sort((a, b) => a.hp - b.hp)[0];
+  return shuffle([...opp]).sort((a, b) => a.hp - b.hp)[0];
 }
+
+// E.G.O를 쓸 때 남겨둘 최소 정신력
+function egoFloor() {
+  return { easy: RULES.minSp + 1, normal: -20, hard: -10 }[G.difficulty];
+}
+const cpuCanEgo = (p, c) => canPayEgo(p, c) && p.sp - c.cost >= egoFloor();
 
 function scoreAttack(p, cards) {
   const info = buildAttack(cards);
   let s = info.atk;
   if (info.fx.includes('twice')) s *= 1.8;
   if (info.fx.includes('all')) s *= 0.7 * Math.max(1, others(p).length);
-  if (info.fx.includes('pierce')) s += 2;
-  for (const f of ['bleed', 'burn', 'fragile', 'lifesteal', 'drainmp', 'holy']) if (info.fx.includes(f)) s += 1.5;
-  if (info.fx.includes('stun')) s += 3;
-  if (cards[0].type === 'miracle') s -= cards[0].mp * 0.4; // MP 아끼기
+  if (info.fx.includes('pierce')) s += 4;
+  for (const f of ['bleed', 'burn', 'fragile', 'lifesteal', 'drainsp', 'mind', 'holy']) if (info.fx.includes(f)) s += 3;
+  if (info.fx.includes('stun')) s += 6;
+  if (cards[0].type === 'ego') s -= cards[0].cost * 0.35; // 정신력 아끼기
   return s;
 }
 
 async function cpuTurn(p) {
   await sleep(500);
 
-  // 1) 무료 행동: 회복 / 정화 / MP / 드로우
-  for (let guard = 0; guard < 5 && p.alive; guard++) {
-    const hpLow = p.hp <= (G.difficulty === 'hard' ? 22 : 16);
+  // 1) 무료 행동: 회복 / 정화 / 정신력 / 돈 / 드로우 / 구매
+  for (let guard = 0; guard < 6 && p.alive; guard++) {
+    const hpLow = p.hp <= (G.difficulty === 'hard' ? 40 : 30);
     const hasBad = p.status.bleed || p.status.burn || p.status.fragile;
+    const card = (pred) => p.hand.find(pred);
     let use = null;
-    if (hpLow) {
-      use = p.hand.find((c) => c.type === 'item' && c.kind === 'heal')
-        || p.hand.find((c) => c.type === 'miracle' && c.kind === 'heal' && p.mp >= c.mp);
+    if (hpLow) use = card((c) => c.type === 'item' && c.kind === 'heal') || card((c) => c.type === 'ego' && c.kind === 'heal' && cpuCanEgo(p, c));
+    if (!use && p.sp <= (G.difficulty === 'hard' ? -10 : -20)) use = card((c) => c.type === 'item' && c.kind === 'sp');
+    if (!use && hasBad) use = card((c) => c.type === 'item' && c.kind === 'cure');
+    if (!use) use = card((c) => c.type === 'item' && c.kind === 'won');
+    if (!use && p.hand.length <= 5 && (!isNight() || p.hp > 40)) use = card((c) => c.type === 'item' && c.kind === 'draw');
+    if (!use && G.difficulty !== 'easy' && p.hp > 40 && Math.random() < 0.3) use = card((c) => c.kind === 'gamble');
+    if (use) {
+      await useSupport(p, use, p);
+      if (checkEnd()) return;
+      continue;
     }
-    if (!use && p.sp <= (G.difficulty === 'hard' ? -4 : -8)) use = p.hand.find((c) => c.type === 'item' && c.kind === 'sp');
-    if (!use && hasBad) use = p.hand.find((c) => c.type === 'item' && c.kind === 'cure');
-    if (!use && p.mp < 5 && p.hand.some((c) => c.type === 'miracle')) use = p.hand.find((c) => c.type === 'item' && c.kind === 'mp');
-    if (!use && p.hand.length <= 5) use = p.hand.find((c) => c.type === 'item' && c.kind === 'draw');
-    if (!use && G.difficulty !== 'easy' && p.hp > 20 && Math.random() < 0.3) use = p.hand.find((c) => c.kind === 'gamble');
-    if (!use) break;
-    await useSupport(p, use, p);
-    if (checkEnd()) return;
+    // 보급 구매: 손패가 적을 때 (밤에는 체력이 충분할 때만)
+    if (p.hand.length <= 4 && (!isNight() || p.hp > 45) && buyCard(p)) {
+      renderAll();
+      await sleep(400);
+      if (checkEnd()) return;
+      continue;
+    }
+    break;
   }
   if (!p.alive) return;
 
@@ -55,10 +69,10 @@ async function cpuTurn(p) {
     options.push([w, ...extra]);
     if (extra.length) options.push([w]);
   }
-  for (const m of p.hand.filter((c) => c.type === 'miracle' && c.kind === 'attack' && p.mp >= c.mp)) options.push([m]);
+  for (const e of p.hand.filter((c) => c.type === 'ego' && c.kind === 'attack' && cpuCanEgo(p, c))) options.push([e]);
 
-  // 3) 방해 기적
-  const disrupt = p.hand.filter((c) => c.type === 'miracle' && (c.kind === 'stun' || c.kind === 'steal') && p.mp >= c.mp);
+  // 3) 방해 E.G.O
+  const disrupt = p.hand.filter((c) => c.type === 'ego' && (c.kind === 'stun' || c.kind === 'steal') && cpuCanEgo(p, c));
 
   if (options.length) {
     let best;
@@ -72,8 +86,7 @@ async function cpuTurn(p) {
       await useSupport(p, disrupt[0], cpuChooseTarget(p));
       return;
     }
-    const target = cpuChooseTarget(p);
-    await performAttack(p, best, [target]);
+    await performAttack(p, best, [cpuChooseTarget(p)]);
     return;
   }
 
@@ -83,69 +96,33 @@ async function cpuTurn(p) {
   }
 
   // 4) 기도
-  const n = drawCards(p, 1);
-  gainMp(p, 2);
-  changeSp(p, 3);
-  log(`${pname(p)} 🙏 기도했습니다 (카드 ${n}장, MP +2, 정신력 +3)`);
-  clearStage(`${p.avatar} ${p.name} 🙏 기도`);
+  pray(p);
+  if (p.alive) clearStage(`${p.avatar} ${p.name} 🙏 기도`);
   renderAll();
   await sleep(600);
 }
 
-// 반환값: { armors: [방어구들], clash: 합에 쓸 무기 또는 null }
-function cpuDefend(p, info) {
-  const attacker = G.players[G.current];
-  const armors = cpuPickArmor(p, info);
-  const clash = cpuPickClash(p, info, attacker, armors);
-  if (clash) return { armors: [], clash };
-  return { armors, clash: null };
-}
-
-function cpuPickClash(p, info, attacker, armors) {
-  if (!canClash(p, info)) return null;
-  const weapons = p.hand.filter((c) => c.type === 'weapon');
-  if (G.difficulty === 'easy') return Math.random() < 0.2 ? pick(weapons) : null;
-
-  // 방어구로 막았을 때 예상 피해
-  const d = calcDefense(p, armors, info);
-  const armorDmg = d.nullify && !info.fx.includes('pierce') ? 0 : Math.max(0, info.atk - d.def);
-
-  let best = null, bestVal = -Infinity;
-  for (const w of weapons) {
-    const o = clashOdds(info.atk, attacker.sp, w.atk, p.sp);
-    // 기대 손익: 지면 전체 피해, 이기면 반격 피해 + 정신력 이득
-    const val = o.win * (w.atk * 0.6 + 3) - o.lose * (info.atk + 3) - w.atk * 0.15;
-    if (val > bestVal) { bestVal = val; best = { w, o }; }
-  }
-  if (!best) return null;
-  const threshold = G.difficulty === 'hard' ? 0.5 : 0.6;
-  const armorCost = -(armorDmg + armors.length * 1.5);
-  if (best.o.win >= threshold && bestVal > armorCost) return best.w;
-  // 막을 방법이 없으면 승산이 조금이라도 있을 때 도박
-  if (!armors.length && best.o.win + best.o.tie >= 0.35) return best.w;
-  return null;
-}
-
-function cpuPickArmor(p, info) {
-  if (info.fx.includes('pierce')) return [];
+// 방어: 낼 방어구 목록을 돌려줌 (내면 무기 vs 방어구 합)
+function cpuDefend(p, info, attacker) {
   const usable = p.hand.filter((c) => c.type === 'armor' && armorMatches(c, info.attr));
   if (!usable.length) return [];
   if (G.difficulty === 'easy') return Math.random() < 0.6 ? [pick(usable)] : [];
 
   const nullify = usable.find((c) => hasFx(c, 'nullify'));
-  if (nullify && info.atk >= 9) return [nullify];
+  if (nullify && info.atk >= 16) return [nullify];
 
   const normal = usable.filter((c) => !hasFx(c, 'nullify')).sort((a, b) => b.def - a.def);
-  if (info.atk <= 2 && p.hp > 15) return [];
+  if (info.atk <= 5 && p.hp > 30) return [];
+
+  // 합 승률이 충분해질 때까지 방어구를 쌓음
+  const want = G.difficulty === 'hard' ? 0.7 : 0.55;
   const chosen = [];
-  let def = 0;
-  const mult = p.status.fragile ? 0.5 : 1;
   for (const c of normal) {
-    if (def * mult >= info.atk) break;
     chosen.push(c);
-    def += c.def;
+    const st = clashStats(info.atk, attacker.sp, armorDef(p, chosen), p.sp, true);
+    if (st.win + st.tie >= want) break;
   }
-  // 위험하지 않다면 방어구 1장만 쓰기
-  if (G.difficulty === 'normal' && p.hp - info.atk > 20 && chosen.length > 1) return chosen.slice(0, 1);
+  // 여유가 있으면 방어구를 1장만 쓰기
+  if (G.difficulty === 'normal' && p.hp - info.atk > 45 && chosen.length > 1) return chosen.slice(0, 1);
   return chosen;
 }

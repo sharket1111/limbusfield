@@ -11,7 +11,7 @@
   --blue: #59a8ff;
   --weapon: #c2453a;
   --armor: #4a7fc2;
-  --miracle: #9a5cd6;
+  --ego: #d6304f;
   --item: #3fa77a;
 }
 
@@ -219,7 +219,8 @@ input, select {
 }
 .card.t-weapon::before { background: var(--weapon); }
 .card.t-armor::before { background: var(--armor); }
-.card.t-miracle::before { background: var(--miracle); }
+.card.t-ego::before { background: linear-gradient(90deg, #d6304f, #ff9a5a); }
+.card.t-ego { background: linear-gradient(170deg, #2e1a20, #140d10); }
 .card.t-item::before { background: var(--item); }
 .card.r2 { border-color: #3a5c86; }
 .card.r3 { border-color: var(--gold); box-shadow: inset 0 0 18px #d9a54a33; }
@@ -227,14 +228,14 @@ input, select {
 .card.sel-main { transform: translateY(-14px) !important; border-color: var(--red); box-shadow: 0 0 0 2px var(--red), 0 8px 24px #e0433b55; }
 .card.sel-plus { transform: translateY(-10px) !important; border-color: #ff9d4a; box-shadow: 0 0 0 2px #ff9d4a; }
 .card.can-plus { box-shadow: 0 0 0 1px #ff9d4a88; }
-.card.no-mp { opacity: .55; }
+.card.no-sp { opacity: .45; }
 .c-top { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
 .c-attr { font-size: 15px; }
 .c-stat { font-family: 'Noto Serif KR', serif; font-size: 34px; font-weight: 900; text-align: center; line-height: 1.15; margin: 2px 0; }
 .c-stat small { font-size: 11px; margin-left: 2px; }
 .c-stat.atk { color: #ff7c6f; }
 .c-stat.def { color: #7fb3ff; }
-.c-stat.mpc { color: #c79bff; }
+.c-stat.egoc { color: #ff6f86; }
 .c-stat.itm { color: #6fdca8; font-size: 26px; }
 .c-name { font-weight: 700; font-size: 12px; line-height: 1.25; text-align: center; }
 .c-sub { font-size: 11px; text-align: center; color: var(--muted); }
@@ -361,3 +362,25 @@ input, select {
   .clash .card.big { width: 84px; height: 122px; }
   .clash-pow { font-size: 26px; }
 }
+
+/* ---------- 돈 / E.G.O / 밤 ---------- */
+.won { color: #f0c96a; margin-left: 8px; }
+.float.won { color: #f0c96a; font-size: 20px; }
+.btn.buy { border-color: #6b5524; }
+.open-guard { font-family: 'Noto Serif KR', serif; font-size: 22px; color: var(--muted); padding: 40px 10px; }
+.night-card { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 24px;
+  border: 2px solid #3b4a8a; border-radius: 12px; background: linear-gradient(170deg, #161b33, #0a0c18); box-shadow: 0 0 30px #3b4a8a66; }
+.night-icon { font-size: 54px; }
+.night-name { font-family: 'Noto Serif KR', serif; font-weight: 900; font-size: 20px; }
+.night-tag { color: #9fb2ff; margin-left: 6px; }
+.night-mark { color: #9fb2ff; }
+.card.night-gallery { align-items: center; justify-content: center; border-color: #3b4a8a; background: linear-gradient(170deg, #161b33, #0a0c18); cursor: default; }
+.card.night-gallery .night-icon { font-size: 40px; }
+body.night {
+  background:
+    radial-gradient(ellipse at top, #141d3d 0%, transparent 55%),
+    radial-gradient(ellipse at bottom, #0d0f22 0%, transparent 60%),
+    #06070d;
+  transition: background 1s;
+}
+body.night #stage { background: radial-gradient(circle at center, #18203d, var(--bg2) 70%); }
