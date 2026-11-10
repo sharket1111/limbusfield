@@ -60,9 +60,9 @@ function makeDeck() {
 function makePlayer(id, name, avatar, human) {
   return {
     id, name, avatar, human,
-    hp: RULES.maxHp, mp: RULES.startMp,
+    hp: RULES.maxHp, mp: RULES.startMp, sp: 0,
     hand: [],
-    status: { bleed: 0, burn: 0, fragile: 0, stun: 0 },
+    status: { bleed: 0, burn: 0, fragile: 0, stun: 0, panic: 0 },
     alive: true,
     dmgDealt: 0,
   };
@@ -161,12 +161,12 @@ function clearStage(text = '') {
 // ------------------------------------------------------------
 //  HP / 상태
 // ------------------------------------------------------------
-function damage(p, n, source = '') {
+function damage(p, n, source = '', killer = null) {
   if (!p.alive || n <= 0) return;
   p.hp = Math.max(0, p.hp - n);
   floatText(p, '-' + n, 'dmg');
   if (source) log(`${pname(p)}: ${source} <span class="neg">-${n}</span>`);
-  if (p.hp <= 0) kill(p);
+  if (p.hp <= 0) kill(p, killer);
 }
 
 function heal(p, n) {
@@ -186,11 +186,66 @@ function gainMp(p, n) {
   return got;
 }
 
-function kill(p) {
+function kill(p, killer = null) {
   p.alive = false;
   for (const c of [...p.hand]) discardCard(p, c);
   log(`💀 ${pname(p)} 이(가) 쓰러졌습니다.`);
   toast(`${p.name} 탈락!`, 'bad');
+  // 누군가 쓰러지면: 처치자는 고양, 나머지는 동요
+  for (const q of alive()) changeSp(q, q === killer ? 6 : -2, true);
+}
+
+// ------------------------------------------------------------
+//  정신력 (SP)
+// ------------------------------------------------------------
+function changeSp(p, n, quiet = false) {
+  if (!p.alive || n === 0) return;
+  const before = p.sp;
+  p.sp = Math.max(RULES.minSp, Math.min(RULES.maxSp, p.sp + n));
+  const got = p.sp - before;
+  if (got && !quiet) floatText(p, (got > 0 ? '+' : '') + got + ' SP', got > 0 ? 'sp' : 'spdown');
+  if (p.sp <= RULES.minSp && !p.status.panic) {
+    p.status.panic = 1;
+    log(`😱 ${pname(p)} 의 정신력이 무너졌습니다! <b class="neg">공황</b> 상태`);
+    if (p.human) toast('공황 상태! 다음 턴을 쉬고 합을 할 수 없습니다', 'bad');
+  }
+}
+
+// 정신력에 따른 코인 앞면 확률 (SP -20 → 5%, 0 → 50%, +20 → 95%)
+function headChance(sp) {
+  return Math.max(0.05, Math.min(0.95, 0.5 + sp * 0.0225));
+}
+
+function rollCoins(p) {
+  const chance = headChance(p.sp);
+  const coins = [];
+  for (let i = 0; i < RULES.coins; i++) coins.push(Math.random() < chance);
+  return coins;
+}
+
+function coinsHTML(coins) {
+  return coins.map((h) => `<span class="coin ${h ? 'head' : 'tail'}">${h ? '●' : '○'}</span>`).join('');
+}
+
+// 합 승률 계산 (정확한 확률)
+function clashOdds(atkBase, spA, defBase, spD) {
+  const n = RULES.coins, cp = RULES.coinPower;
+  const binom = (pr) => {
+    const out = [];
+    for (let k = 0; k <= n; k++) {
+      let c = 1;
+      for (let i = 0; i < k; i++) c = (c * (n - i)) / (i + 1);
+      out.push(c * pr ** k * (1 - pr) ** (n - k));
+    }
+    return out;
+  };
+  const A = binom(headChance(spA)), D = binom(headChance(spD));
+  let win = 0, tie = 0, lose = 0;
+  for (let i = 0; i <= n; i++) for (let j = 0; j <= n; j++) {
+    const a = atkBase + i * cp, d = defBase + j * cp, pr = A[i] * D[j];
+    if (d > a) win += pr; else if (d === a) tie += pr; else lose += pr;
+  }
+  return { win, tie, lose }; // 방어자 기준
 }
 
 function applyStatus(p, fx) {
@@ -205,7 +260,7 @@ function applyStatus(p, fx) {
 }
 
 function cureAll(p) {
-  p.status = { bleed: 0, burn: 0, fragile: 0, stun: 0 };
+  p.status = { ...p.status, bleed: 0, burn: 0, fragile: 0 };
 }
 
 // ------------------------------------------------------------
@@ -280,8 +335,14 @@ async function performAttack(attacker, cards, targets) {
   renderAll();
 }
 
+const canClash = (target, info) =>
+  info.cards[0].type === 'weapon' && !target.status.panic && target.hand.some((c) => c.type === 'weapon');
+
 async function resolveHit(attacker, target, info) {
-  const armors = target.human ? await humanDefend(target, attacker, info) : cpuDefend(target, info);
+  const resp = target.human ? await humanDefend(target, attacker, info) : cpuDefend(target, info);
+  if (resp.clash) return resolveClash(attacker, target, info, resp.clash);
+
+  const armors = resp.armors;
   for (const ar of armors) discardCard(target, ar);
   const d = calcDefense(target, armors, info);
 
@@ -292,21 +353,32 @@ async function resolveHit(attacker, target, info) {
   if (d.nullify && !info.fx.includes('pierce')) {
     log(`${pname(target)} 🛑 공격을 무효화했습니다!`);
     floatText(target, '무효', 'block');
+    changeSp(target, 2, true);
+    changeSp(attacker, -1, true);
     return;
   }
 
   const dmg = Math.max(0, info.atk - d.def);
   if (d.reflect) {
     const back = Math.floor(Math.min(info.atk, d.def) / 2);
-    if (back > 0) damage(attacker, back, '🪞 반사 피해');
+    if (back > 0) damage(attacker, back, '🪞 반사 피해', target);
   }
   if (dmg === 0) {
     floatText(target, '방어!', 'block');
     log(`${pname(target)} 이(가) 공격을 완전히 막아냈습니다.`);
+    changeSp(target, 2, true);
+    changeSp(attacker, -1, true);
     return;
   }
-  damage(target, dmg, `${cards2(info)} 피격`);
+  landHit(attacker, target, dmg, info);
+}
+
+// 피해 적중 공통 처리
+function landHit(attacker, target, dmg, info) {
+  damage(target, dmg, `${cards2(info)} 피격`, attacker);
   attacker.dmgDealt += dmg;
+  changeSp(attacker, 2, true);
+  changeSp(target, -Math.max(1, Math.floor(dmg / 3)), true);
 
   if (info.fx.includes('lifesteal') && attacker.alive) {
     const got = heal(attacker, Math.floor(dmg / 2));
@@ -318,7 +390,64 @@ async function resolveHit(attacker, target, info) {
     gainMp(attacker, n);
     log(`${pname(attacker)} 이(가) ${pname(target)}의 MP ${n} 흡수`);
   }
+  if (info.fx.includes('mind') && target.alive) {
+    log(`${pname(target)} 🌀 정신 피해 — 정신력 -5`);
+    changeSp(target, -5);
+  }
   applyStatus(target, info.fx);
+}
+
+// 합: 공격자와 방어자가 코인을 던져 위력을 겨룸
+async function resolveClash(attacker, target, info, counter) {
+  discardCard(target, counter);
+  const ca = rollCoins(attacker), cd = rollCoins(target);
+  const cp = RULES.coinPower;
+  const pa = info.atk + ca.filter(Boolean).length * cp;
+  const pd = counter.atk + cd.filter(Boolean).length * cp;
+
+  const st = $('#stage');
+  st.innerHTML = `
+    <div class="stage-head">⚔ <b>합</b> ⚔</div>
+    <div class="clash">
+      <div class="clash-side">
+        <div>${pname(attacker)}</div>
+        <div class="stage-cards">${info.cards.map((c) => cardHTML(c, { big: true })).join('')}</div>
+        <div class="coins">${coinsHTML(ca)}</div>
+        <div class="clash-pow ${pa > pd ? 'win' : pa < pd ? 'lose' : ''}">${pa}</div>
+      </div>
+      <div class="clash-vs">VS</div>
+      <div class="clash-side">
+        <div>${pname(target)}</div>
+        <div class="stage-cards">${cardHTML(counter, { big: true })}</div>
+        <div class="coins">${coinsHTML(cd)}</div>
+        <div class="clash-pow ${pd > pa ? 'win' : pd < pa ? 'lose' : ''}">${pd}</div>
+      </div>
+    </div>`;
+  st.classList.remove('pop');
+  void st.offsetWidth;
+  st.classList.add('pop');
+  log(`⚔ 합! ${pname(attacker)} <b>${pa}</b> ${coinsHTML(ca)} vs ${coinsHTML(cd)} <b>${pd}</b> ${pname(target)} ${cname(counter)}`);
+  renderAll();
+  await sleep(1300);
+
+  if (pa > pd) {
+    log(`${pname(attacker)} 합 승리! 방어 없이 그대로 적중`);
+    floatText(attacker, '합 승리', 'sp');
+    changeSp(attacker, 4, true);
+    changeSp(target, -4, true);
+    landHit(attacker, target, info.atk, info);
+  } else if (pd > pa) {
+    log(`${pname(target)} 합 승리! 공격을 받아치고 반격`);
+    floatText(target, '합 승리', 'sp');
+    changeSp(target, 4, true);
+    changeSp(attacker, -4, true);
+    const cinfo = buildAttack([counter]);
+    landHit(target, attacker, counter.atk, cinfo);
+  } else {
+    log('합 무승부 — 두 공격이 서로 상쇄되었습니다.');
+    floatText(attacker, '상쇄', 'block');
+    floatText(target, '상쇄', 'block');
+  }
 }
 
 function cards2(info) {
@@ -341,6 +470,9 @@ async function useSupport(p, card, target) {
     log(`${pname(p)} HP ${got} 회복`);
   } else if (kind === 'mp') {
     gainMp(p, card.power);
+  } else if (kind === 'sp') {
+    changeSp(p, card.power);
+    log(`${pname(p)} 정신력 ${card.power} 회복`);
   } else if (kind === 'cure') {
     cureAll(p);
     floatText(p, '정화', 'heal');
@@ -367,8 +499,9 @@ async function useSupport(p, card, target) {
     }
   } else if (kind === 'stun') {
     target.status.stun = 1;
-    log(`${pname(target)} 💫 정신이 오염되어 다음 턴을 쉽니다`);
+    log(`${pname(target)} 💫 정신이 오염되어 다음 턴을 쉽니다 (정신력 -6)`);
     floatText(target, '기절', 'dmg');
+    changeSp(target, -6, true);
   }
   renderAll();
   await sleep(600);
@@ -408,7 +541,18 @@ async function takeTurn(p) {
     if (!p.alive) return;
   }
 
-  const skip = p.status.stun > 0;
+  // 교착 방지: 일정 라운드 이후 야근 피해 (5라운드마다 1씩 증가)
+  if (G.round >= RULES.overtimeRound) {
+    const ot = 1 + Math.floor((G.round - RULES.overtimeRound) / 5);
+    damage(p, ot, '🌙 야근의 피로');
+    changeSp(p, -1, true);
+    renderAll();
+    await sleep(300);
+    if (!p.alive) return;
+  }
+
+  const panicking = p.status.panic > 0;
+  const skip = p.status.stun > 0 || panicking;
   if (!skip) {
     const n = drawCards(p, RULES.drawPerTurn);
     if (p.human && n) toast('카드 1장을 뽑았습니다');
@@ -416,8 +560,14 @@ async function takeTurn(p) {
   renderAll();
 
   if (skip) {
-    log(`${pname(p)} 💫 기절해서 행동할 수 없습니다`);
-    floatText(p, '기절', 'block');
+    if (panicking) {
+      log(`${pname(p)} 😱 공황 상태라 행동할 수 없습니다. 정신을 추스릅니다... (정신력 0으로 회복)`);
+      floatText(p, '공황', 'block');
+      p.sp = 0;
+    } else {
+      log(`${pname(p)} 💫 기절해서 행동할 수 없습니다`);
+      floatText(p, '기절', 'block');
+    }
     await sleep(800);
   } else if (p.human) {
     await humanTurn(p);
@@ -426,7 +576,7 @@ async function takeTurn(p) {
   }
 
   // 턴 종료 시 상태 감소
-  for (const k of ['bleed', 'burn', 'fragile', 'stun']) if (p.status[k] > 0) p.status[k]--;
+  for (const k of ['bleed', 'burn', 'fragile', 'stun', 'panic']) if (p.status[k] > 0) p.status[k]--;
   renderAll();
 }
 
@@ -555,29 +705,43 @@ async function onPray() {
   G.acting = true;
   const n = drawCards(me, 1);
   gainMp(me, 2);
-  log(`${pname(me)} 🙏 기도했습니다 (카드 ${n}장, MP +2)`);
+  changeSp(me, 3);
+  log(`${pname(me)} 🙏 기도했습니다 (카드 ${n}장, MP +2, 정신력 +3)`);
   clearStage('🙏 기도');
   await sleep(400);
   G.acting = false;
   endHumanTurn();
 }
 
-// 방어 선택 창
+// 방어 선택 창 — 방어구 여러 장, 또는 무기 1장으로 합
 function humanDefend(me, attacker, info) {
-  if (info.fx.includes('pierce')) {
-    toast('관통 공격! 방어할 수 없습니다', 'bad');
-    return Promise.resolve([]);
+  const pierce = info.fx.includes('pierce');
+  const clashOk = canClash(me, info);
+  const armors = pierce ? [] : me.hand.filter((c) => c.type === 'armor');
+  const weapons = clashOk ? me.hand.filter((c) => c.type === 'weapon') : [];
+  if (!armors.length && !weapons.length) {
+    if (pierce) toast('관통 공격! 방어할 수 없습니다', 'bad');
+    return Promise.resolve({ armors: [], clash: null });
   }
-  const armors = me.hand.filter((c) => c.type === 'armor');
   return new Promise((res) => {
     const chosen = new Set();
+    let clash = null;
     const modal = $('#defend');
     const a = ATTR[info.attr];
 
     const draw = () => {
       const picked = armors.filter((c) => chosen.has(c.uid));
-      const d = calcDefense(me, picked, info);
-      const dmg = d.nullify ? 0 : Math.max(0, info.atk - d.def);
+      let preview;
+      if (clash) {
+        const o = clashOdds(info.atk, attacker.sp, clash.atk, me.sp);
+        preview = `합 승률 <b class="pos">${Math.round(o.win * 100)}%</b> · 무승부 ${Math.round(o.tie * 100)}% · 패배 <b class="neg">${Math.round(o.lose * 100)}%</b>
+          <div class="muted small">이기면 공격 무효 + ${clash.atk} 반격 / 지면 ${info.atk} 피해를 방어 없이 받음</div>`;
+      } else {
+        const d = calcDefense(me, picked, info);
+        const dmg = d.nullify && !pierce ? 0 : Math.max(0, info.atk - d.def);
+        preview = `예상 피해 <b class="${dmg ? 'neg' : 'pos'}">${dmg}</b> <span class="muted">(현재 HP ${me.hp})</span>`;
+      }
+      const cp = RULES.coinPower, n = RULES.coins;
       modal.querySelector('.def-box').innerHTML = `
         <h2>공격받고 있습니다!</h2>
         <div class="def-attack">
@@ -585,27 +749,39 @@ function humanDefend(me, attacker, info) {
           <span class="big-atk" style="color:${a.color}">${a.icon} ${a.name} ${info.atk}</span>
           ${info.fx.length ? `<div class="muted">${info.fx.map((f) => FX_TEXT[f]).join(' · ')}</div>` : ''}
         </div>
-        <div class="def-hint">${armors.length ? `<b>${a.name}</b> 또는 <b>전속성</b> 방어구만 쓸 수 있습니다.` : '방어구가 없습니다.'}
-          ${me.status.fragile ? '<br><span class="neg">💔 취약 상태: 방어력 절반</span>' : ''}</div>
-        <div class="def-cards">${armors.map((c) => {
-          const ok = armorMatches(c, info.attr);
-          return `<div class="def-slot ${ok ? '' : 'disabled'} ${chosen.has(c.uid) ? 'chosen' : ''}" data-uid="${c.uid}">${cardHTML(c)}</div>`;
-        }).join('')}</div>
-        <div class="def-preview">예상 피해 <b class="${dmg ? 'neg' : 'pos'}">${dmg}</b> <span class="muted">(현재 HP ${me.hp})</span></div>
+        <div class="sp-line">정신력 — 나 <b>${me.sp}</b> (앞면 ${Math.round(headChance(me.sp) * 100)}%) · 상대 <b>${attacker.sp}</b> (앞면 ${Math.round(headChance(attacker.sp) * 100)}%)</div>
+        ${armors.length ? `
+          <h3>🛡 방어구 <span class="muted small">${a.name} 또는 전속성만 사용 가능${me.status.fragile ? ' · <span class="neg">💔 취약: 방어력 절반</span>' : ''}</span></h3>
+          <div class="def-cards">${armors.map((c) => {
+            const ok = armorMatches(c, info.attr) && !clash;
+            return `<div class="def-slot ${ok ? '' : 'disabled'} ${chosen.has(c.uid) ? 'chosen' : ''}" data-uid="${c.uid}" data-kind="armor">${cardHTML(c)}</div>`;
+          }).join('')}</div>` : (pierce ? '<div class="def-hint neg">관통 공격 — 방어구를 쓸 수 없습니다</div>' : '')}
+        ${weapons.length ? `
+          <h3>⚔ 합 <span class="muted small">무기 1장으로 맞받아치기 · 위력 = 공격력 + 코인 ${n}개(앞면당 +${cp})</span></h3>
+          <div class="def-cards">${weapons.map((c) =>
+            `<div class="def-slot clash-slot ${clash && clash.uid === c.uid ? 'chosen' : ''}" data-uid="${c.uid}" data-kind="weapon">${cardHTML(c)}</div>`).join('')}</div>`
+          : (info.cards[0].type !== 'weapon' ? '<div class="def-hint muted">기적 공격은 합을 할 수 없습니다</div>'
+            : me.status.panic ? '<div class="def-hint neg">😱 공황 상태 — 합을 할 수 없습니다</div>' : '')}
+        <div class="def-preview">${preview}</div>
         <div class="def-actions">
-          <button class="btn primary" id="def-ok">${picked.length ? '방어' : '그대로 받기'}</button>
+          <button class="btn primary" id="def-ok">${clash ? '⚔ 합!' : picked.length ? '방어' : '그대로 받기'}</button>
         </div>`;
       $$('.def-slot', modal).forEach((el) => {
         el.onclick = () => {
           if (el.classList.contains('disabled')) return;
           const uid = +el.dataset.uid;
-          chosen.has(uid) ? chosen.delete(uid) : chosen.add(uid);
+          if (el.dataset.kind === 'weapon') {
+            clash = clash && clash.uid === uid ? null : weapons.find((c) => c.uid === uid);
+            if (clash) chosen.clear();
+          } else {
+            chosen.has(uid) ? chosen.delete(uid) : chosen.add(uid);
+          }
           draw();
         };
       });
       $('#def-ok').onclick = () => {
         modal.classList.remove('show');
-        res(armors.filter((c) => chosen.has(c.uid)));
+        res({ armors: clash ? [] : armors.filter((c) => chosen.has(c.uid)), clash });
       };
     };
     draw();
@@ -628,7 +804,7 @@ function cardHTML(c, opt = {}) {
   if (c.type === 'miracle') {
     sub = { attack: `${c.power} 피해`, heal: `HP +${c.power}`, cure: '상태 해제', steal: '카드 강탈', stun: '기절' }[c.kind];
   } else if (c.type === 'item') {
-    sub = { heal: `HP +${c.power}`, mp: `MP +${c.power}`, cure: '상태 해제', draw: `${c.power}장 뽑기`, gamble: '???' }[c.kind];
+    sub = { heal: `HP +${c.power}`, mp: `MP +${c.power}`, sp: `SP +${c.power}`, cure: '상태 해제', draw: `${c.power}장 뽑기`, gamble: '???' }[c.kind];
   }
   const tags = [...fxOf(c).map((f) => FX_TEXT[f]), c.plus ? '보조' : null].filter(Boolean);
   const typeName = { weapon: '무기', armor: '방어구', miracle: '기적', item: '도구' }[c.type];
@@ -653,6 +829,16 @@ function bar(cur, max, cls) {
   return `<div class="bar ${cls}"><div style="width:${(cur / max) * 100}%"></div><span>${cur}</span></div>`;
 }
 
+// 정신력 막대: 가운데가 0, 왼쪽(붉은색)이 음수, 오른쪽(금색)이 양수
+function spBar(p) {
+  const half = RULES.maxSp;
+  const w = (Math.abs(p.sp) / half) * 50;
+  const style = p.sp >= 0 ? `left:50%;width:${w}%` : `left:${50 - w}%;width:${w}%`;
+  const face = p.sp >= 12 ? '😤' : p.sp >= 4 ? '🙂' : p.sp > -4 ? '😐' : p.sp > -12 ? '😰' : '😱';
+  return `<div class="bar sp ${p.sp < 0 ? 'neg' : ''}" title="정신력 ${p.sp} — 합 코인 앞면 확률 ${Math.round(headChance(p.sp) * 100)}%">
+    <i></i><div style="${style}"></div><span>${face} SP ${p.sp}</span></div>`;
+}
+
 function renderOpponents() {
   const box = $('#opponents');
   const targeting = G.humanResolve && !G.acting && G.sel.main && needsTarget(G.sel.main);
@@ -664,6 +850,7 @@ function renderOpponents() {
         <div class="opp-name">${p.name} <span class="st-row">${statusHTML(p)}</span></div>
         ${bar(p.hp, RULES.maxHp, 'hp')}
         ${bar(p.mp, RULES.maxMp, 'mp')}
+        ${spBar(p)}
         <div class="opp-hand">🂠 × ${p.hand.length}</div>
       </div>
     </div>`).join('');
@@ -680,6 +867,7 @@ function renderMe() {
         <div class="opp-name">${me.name} <span class="st-row">${statusHTML(me)}</span></div>
         ${bar(me.hp, RULES.maxHp, 'hp')}
         ${bar(me.mp, RULES.maxMp, 'mp')}
+        ${spBar(me)}
       </div>
     </div>`;
 
@@ -743,7 +931,7 @@ function renderAll() {
   renderOpponents();
   renderMe();
   renderInfo();
-  $('#round').textContent = `ROUND ${G.round}`;
+  $('#round').textContent = `ROUND ${G.round}${G.round >= RULES.overtimeRound ? ' 🌙 야근' : ''}`;
   $('#deckcount').textContent = `덱 ${G.deck.length} · 버림 ${G.discard.length}`;
 }
 

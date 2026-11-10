@@ -9,7 +9,7 @@
 //  weapon : atk, plus(보조 무기 — 다른 무기에 덧붙일 수 있음), fx(특수효과)
 //  armor  : def, fx
 //  miracle: mp(소모), kind: attack|heal|cure|steal|stun|mpgain, power, fx
-//  item   : kind: heal|mp|cure|draw|gamble, power
+//  item   : kind: heal|mp|sp|cure|draw|gamble, power
 //
 //  fx 목록
 //    bleed      : 피해를 입힌 대상에 출혈(3턴) — 공격할 때마다 3 피해
@@ -22,6 +22,7 @@
 //    all        : 다른 모든 플레이어 공격
 //    twice      : 같은 대상에게 2회 공격
 //    holy       : 공격 후 자신 HP 3 회복
+//    mind       : 피해를 입힌 대상의 정신력 -5
 //    reflect    : (방어구) 막은 피해의 절반을 공격자에게 되돌림
 //    nullify    : (방어구) 공격을 완전히 무효화 (관통 제외)
 // ============================================================
@@ -40,12 +41,13 @@ const STATUS = {
   burn:    { name: '화상', icon: '🔥', desc: '턴 시작 시 3 피해 (3턴)' },
   fragile: { name: '취약', icon: '💔', desc: '방어력 절반 (2턴)' },
   stun:    { name: '기절', icon: '💫', desc: '다음 턴을 건너뜀' },
+  panic:   { name: '공황', icon: '😱', desc: '정신력 붕괴 — 다음 턴을 건너뛰고 합을 할 수 없음' },
 };
 
 const FX_TEXT = {
   bleed: '출혈 부여', burn: '화상 부여', fragile: '취약 부여', stun: '기절 부여',
   pierce: '방어 무시', lifesteal: '흡혈', drainmp: 'MP 흡수 3', all: '전체 공격',
-  twice: '2회 공격', holy: '자신 HP +3', reflect: '피해 절반 반사', nullify: '공격 무효화',
+  twice: '2회 공격', mind: '정신 피해 5', holy: '자신 HP +3', reflect: '피해 절반 반사', nullify: '공격 무효화',
 };
 
 const CARDS = [
@@ -60,7 +62,7 @@ const CARDS = [
     flavor: '꺼지지 않는 불. 퇴근하지 못한 자들의 온기.' },
   { id: 'w_contract', type: 'weapon', name: '서리 낀 계약서',     attr: 'frost',  atk: 5,  count: 3, rarity: 1, fx: ['fragile'],
     flavor: '서명한 순간부터 손끝이 얼어붙는다.' },
-  { id: 'w_mask',     type: 'weapon', name: '웃는 면접관의 가면', attr: 'shadow', atk: 4,  count: 2, rarity: 2, fx: ['drainmp'],
+  { id: 'w_mask',     type: 'weapon', name: '웃는 면접관의 가면', attr: 'shadow', atk: 4,  count: 2, rarity: 2, fx: ['drainmp', 'mind'],
     flavor: '“당신의 장점을 말해 보세요.”' },
   { id: 'w_clock',    type: 'weapon', name: '멈춘 시계탑의 바늘', attr: 'phys',   atk: 8,  count: 2, rarity: 2,
     flavor: '정오에서 영원히 멈춘 시침.' },
@@ -76,6 +78,8 @@ const CARDS = [
     flavor: '갑옷의 이음새만을 찾아 들어간다.' },
   { id: 'w_vine',     type: 'weapon', name: '녹슨 철조망 채찍',   attr: 'phys',   atk: 3,  count: 2, rarity: 1, plus: true, fx: ['bleed'],
     flavor: '둥지 바깥 울타리에서 뜯어 왔다.' },
+  { id: 'w_gavel',    type: 'weapon', name: '판결의 의사봉',      attr: 'phys',   atk: 5,  count: 2, rarity: 2, fx: ['mind'],
+    flavor: '탕, 탕, 탕. 세 번 울리면 누구든 고개를 숙인다.' },
   { id: 'w_bell',     type: 'weapon', name: '얼어붙은 종',        attr: 'frost',  atk: 7,  count: 1, rarity: 2, fx: ['stun'],
     flavor: '종이 울리면 모두가 그 자리에 멈춘다.' },
   { id: 'w_spear',    type: 'weapon', name: '별을 삼킨 창',       attr: 'light',  atk: 12, count: 1, rarity: 3,
@@ -112,7 +116,7 @@ const CARDS = [
     flavor: '나중에 처리하기로 한다.' },
   { id: 'm_judge',    type: 'miracle', name: '최종 감사',     kind: 'attack', attr: 'light',  mp: 6, power: 11, count: 1, rarity: 2,
     flavor: '모든 비리가 빛 아래 드러난다.' },
-  { id: 'm_whisper',  type: 'miracle', name: '복도의 속삭임', kind: 'attack', attr: 'shadow', mp: 5, power: 5, count: 2, rarity: 2, fx: ['all'],
+  { id: 'm_whisper',  type: 'miracle', name: '복도의 속삭임', kind: 'attack', attr: 'shadow', mp: 5, power: 5, count: 2, rarity: 2, fx: ['all', 'mind'],
     flavor: '누가 먼저 시작했는지는 아무도 모른다.' },
   { id: 'm_mend',     type: 'miracle', name: '응급 봉합',     kind: 'heal',   mp: 3, power: 10, count: 3, rarity: 1,
     flavor: '흉터는 남겠지만.' },
@@ -130,6 +134,8 @@ const CARDS = [
     flavor: '부작용은 서류에 적혀 있지 않다.' },
   { id: 'i_coffee',   type: 'item', name: '야근용 캔커피',   kind: 'mp',     power: 6,  count: 3, rarity: 1,
     flavor: '세 번째 캔부터 손이 떨린다.' },
+  { id: 'i_calm',     type: 'item', name: '안정제 패치',     kind: 'sp',     power: 8,  count: 3, rarity: 1,
+    flavor: '정신력 +8. 붙이는 순간 세상이 조금 조용해진다.' },
   { id: 'i_antidote', type: 'item', name: '해독 키트',       kind: 'cure',             count: 2, rarity: 1,
     flavor: '대부분의 것에 효과가 있다. 대부분.' },
   { id: 'i_supply',   type: 'item', name: '보급 요청서',     kind: 'draw',   power: 2,  count: 3, rarity: 1,
@@ -145,6 +151,12 @@ const RULES = {
   startHand: 7,
   maxHand: 10,
   drawPerTurn: 1,
+  // 정신력 / 합
+  minSp: -20,
+  maxSp: 20,
+  coins: 3,        // 합에서 던지는 코인 수
+  coinPower: 2,    // 앞면 1개당 위력
+  overtimeRound: 25, // 이 라운드부터 매 턴 피해 (교착 방지)
 };
 
 const CPU_NAMES = ['해결사 K', '수습사원 R', '청소부 J', '중개인 M', '사서 Q', '경비원 T', '연구원 V'];

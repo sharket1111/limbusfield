@@ -332,3 +332,32 @@ input, select {
   .card.big { width: 100px; height: 144px; }
   #deckcount { display: none; }
 }
+
+/* ---------- 정신력 / 합 ---------- */
+.bar.sp > div { position: absolute; top: 0; background: linear-gradient(90deg, #c99a3a, #ffd76a); }
+.bar.sp.neg > div { background: linear-gradient(90deg, #7a1fa8, #c04ad6); }
+.bar.sp > i { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: #ffffff40; }
+.bar.sp span { z-index: 1; }
+.float.sp { color: #ffd76a; font-size: 20px; }
+.float.spdown { color: #c04ad6; font-size: 20px; }
+.small { font-size: 12px; }
+.sp-line { font-size: 13px; margin: 6px 0 4px; color: var(--muted); }
+.sp-line b { color: var(--text); }
+.def-box h3 { margin: 14px 0 0; font-size: 15px; text-align: left; }
+.def-box .def-cards { margin: 8px 0; }
+.clash-slot.chosen .card { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold), 0 0 20px #d9a54a66; }
+.clash { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: center; }
+.clash-side { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.clash-vs { font-family: 'Noto Serif KR', serif; font-weight: 900; font-size: 26px; color: var(--red); }
+.clash-pow { font-family: 'Noto Serif KR', serif; font-weight: 900; font-size: 34px; }
+.clash-pow.win { color: var(--gold); text-shadow: 0 0 16px #d9a54a99; }
+.clash-pow.lose { color: var(--muted); text-decoration: line-through; }
+.coins { display: flex; gap: 4px; }
+.coin { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; align-items: center; justify-content: center; font-size: 13px; }
+.coin.head { background: radial-gradient(circle at 35% 35%, #ffe9a8, #c99a3a); color: #5a3d0c; box-shadow: 0 0 8px #d9a54a88; }
+.coin.tail { background: #2a2630; color: #6a6470; border: 1px solid #3a3540; }
+.log-line .coin { width: 14px; height: 14px; font-size: 9px; vertical-align: middle; }
+@media (max-width: 760px) {
+  .clash .card.big { width: 84px; height: 122px; }
+  .clash-pow { font-size: 26px; }
+}
