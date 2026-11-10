@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Anomaly Field</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- 타이틀 -->
+  <section id="title" class="screen show">
+    <div class="title-wrap">
+      <div class="logo">
+        <div class="logo-sub">THE CITY · DISTRICT 00</div>
+        <h1>ANOMALY FIELD</h1>
+        <div class="logo-kr">이상현상 결투장</div>
+      </div>
+      <p class="tagline">이상현상에서 추출한 장비를 손에 들고, 마지막 한 사람이 남을 때까지 싸우세요.</p>
+
+      <div class="form">
+        <label>이름 <input id="in-name" maxlength="10" placeholder="관리자"></label>
+        <label>상대 수
+          <select id="in-cpu">
+            <option value="1">1명</option><option value="2">2명</option>
+            <option value="3" selected>3명</option><option value="4">4명</option><option value="5">5명</option>
+          </select>
+        </label>
+        <label>난이도
+          <select id="in-diff">
+            <option value="easy">쉬움</option><option value="normal" selected>보통</option><option value="hard">어려움</option>
+          </select>
+        </label>
+        <label>속도
+          <select id="in-speed">
+            <option value="1.6">느림</option><option value="1" selected>보통</option><option value="0.5">빠름</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="title-btns">
+        <button class="btn primary big" id="btn-start">출근하기</button>
+        <button class="btn open-rules">규칙</button>
+        <button class="btn" id="btn-gallery">카드 도감</button>
+      </div>
+      <div id="stats" class="muted"></div>
+    </div>
+  </section>
+
+  <!-- 게임 -->
+  <section id="game" class="screen">
+    <header class="topbar">
+      <div class="brand">ANOMALY FIELD</div>
+      <div id="round">ROUND 1</div>
+      <div id="deckcount" class="muted"></div>
+      <div class="spacer"></div>
+      <select id="in-speed-game" title="속도">
+        <option value="1.6">느림</option><option value="1" selected>보통</option><option value="0.5">빠름</option>
+      </select>
+      <button class="btn small open-rules">규칙</button>
+    </header>
+
+    <div id="opponents"></div>
+
+    <div class="middle">
+      <div id="stage"></div>
+      <div id="log"></div>
+    </div>
+
+    <div class="bottom">
+      <div class="bottom-row">
+        <div id="me"></div>
+        <div class="controls">
+          <div id="preview"></div>
+          <div class="btns">
+            <button class="btn primary" id="btn-act">상대 차례</button>
+            <button class="btn" id="btn-cancel">선택 취소</button>
+            <button class="btn pray" id="btn-pray">🙏 기도 (턴 종료)</button>
+          </div>
+        </div>
+      </div>
+      <div id="info"></div>
+      <div id="hand"></div>
+    </div>
+  </section>
+
+  <!-- 방어 -->
+  <div id="defend" class="modal"><div class="def-box"></div></div>
+
+  <!-- 결과 -->
+  <div id="result" class="modal">
+    <div class="panel">
+      <h2 id="result-title"></h2>
+      <div id="result-body"></div>
+      <div class="title-btns">
+        <button class="btn primary" id="btn-again">다시 하기</button>
+        <button class="btn" id="btn-title">타이틀로</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 규칙 -->
+  <div id="rules" class="modal">
+    <div class="panel rules">
+      <h2>규칙</h2>
+      <ul>
+        <li>모든 플레이어는 <b>HP 40</b>, <b>MP 8</b>, 카드 7장으로 시작합니다. HP가 0이 되면 탈락, 마지막 1명이 승리합니다.</li>
+        <li>자기 턴이 시작되면 카드를 1장 뽑습니다. (손패 최대 10장)</li>
+        <li><b>무기</b>로 상대 1명을 공격합니다. <b>보조</b> 표시가 있는 무기는 다른 무기에 덧붙여 공격력을 합칠 수 있습니다. 공격하면 턴이 끝납니다.</li>
+        <li>공격받은 쪽은 손패의 <b>방어구</b>를 원하는 만큼 내서 막습니다. 방어구는 <b>같은 속성</b> 또는 <b>전속성</b>일 때만 쓸 수 있습니다. 피해 = 공격력 − 방어력.</li>
+        <li>속성: ⚔물리 · 🔥화염 · ❄냉기 · ✦광휘 · ☾그림자. 공격의 속성은 주 무기를 따릅니다.</li>
+        <li><b>기적</b>은 MP를 소모합니다. 공격·강탈·기절 기적은 턴을 끝내고, 회복·정화 기적은 턴을 끝내지 않습니다.</li>
+        <li><b>도구</b>는 턴을 끝내지 않고 자유롭게 쓸 수 있습니다.</li>
+        <li>할 게 없으면 <b>기도</b>: 카드 1장 + MP 2를 얻고 턴을 마칩니다.</li>
+        <li>상태 이상 — 🩸출혈: 공격할 때마다 3 피해 · 🔥화상: 턴 시작 시 3 피해 · 💔취약: 방어력 절반 · 💫기절: 다음 턴 건너뜀</li>
+      </ul>
+      <button class="btn primary" id="rules-close">확인</button>
+    </div>
+  </div>
+
+  <!-- 도감 -->
+  <div id="gallery" class="modal">
+    <div class="panel gallery">
+      <h2>카드 도감</h2>
+      <div id="gallery-list"></div>
+      <button class="btn primary" id="gallery-close">닫기</button>
+    </div>
+  </div>
+
+  <div id="toasts"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/ai.js"></script>
+</body>
+</html>
