@@ -6,6 +6,9 @@
 function cpuChooseTarget(p) {
   const opp = others(p);
   if (G.difficulty === 'easy') return pick(opp);
+  // 흐트러진 상대(방어 불가, 피해 1.5배)를 우선
+  const broken = opp.filter((q) => has(q, 'staggered'));
+  if (broken.length && Math.random() < 0.5) return pick(broken);
   // 체력이 낮은 상대를 노리되, 가끔은 무작위
   if (Math.random() < 0.25) return pick(opp);
   return shuffle([...opp]).sort((a, b) => a.hp - b.hp)[0];

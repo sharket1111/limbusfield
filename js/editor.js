@@ -1,31 +1,16 @@
 // ============================================================
-//  카드 공방 — 웹에서 직접 카드를 만들고 저장 (브라우저 localStorage)
+//  카드 공방 — 웹에서 직접 카드와 카드팩을 만들고 저장 (브라우저 localStorage)
 // ============================================================
 'use strict';
 
-const CUSTOM_KEY = 'af_custom_cards';
+const CUSTOM_KEY = 'af_custom_cards';   // 예전 형식 (카드팩 도입 전)
+const PACKS_KEY = 'af_packs';
+const ACTIVE_KEY = 'af_active_pack';
 const TYPES = ['weapon', 'armor', 'ego', 'item'];
 const MAX_COINS = 6;
+const newId = (pre) => pre + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
-// ---------------- 저장 / 불러오기 ----------------
-function getCustomCards() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]');
-    return Array.isArray(raw) ? raw.map(normalizeCard).filter(Boolean) : [];
-  } catch { return []; }
-}
-
-function saveCustomCards(list) {
-  try {
-    localStorage.setItem(CUSTOM_KEY, JSON.stringify(list));
-    return true;
-  } catch {
-    toast('저장 공간이 부족합니다. 이미지가 큰 카드를 줄이거나 지워 주세요.', 'bad');
-    return false;
-  }
-}
-
-// ---------------- 검증 (가져온 JSON도 이걸 거침) ----------------
+// ---------------- 검증 (가져온 JSON도 모두 이걸 거침) ----------------
 const cleanText = (v, max) => String(v == null ? '' : v).replace(/[<>&"'`\\]/g, '').slice(0, max);
 const num = (v, lo, hi, def = 0) => {
   const n = Math.round(Number(v));
@@ -49,7 +34,7 @@ function normalizeEffect(e, coin = false) {
 function normalizeCard(c) {
   if (!c || !TYPES.includes(c.type)) return null;
   const out = {
-    id: /^c_[a-z0-9_]+$/i.test(c.id || '') ? c.id : 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    id: /^c_[a-z0-9_]+$/i.test(c.id || '') ? c.id : newId('c'),
     custom: true,
     enabled: c.enabled !== false,
     type: c.type,
@@ -58,7 +43,7 @@ function normalizeCard(c) {
     price: num(c.price, 0, 99, 5),
     count: num(c.count, 1, 5, 1),
     rarity: num(c.rarity, 1, 3, 1),
-    img: typeof c.img === 'string' && IMG_RE.test(c.img) ? c.img : '',
+    img: typeof c.img === 'string' && IMG_RE.test(c.img) && c.img.length < 400000 ? c.img : '',
     effects: (Array.isArray(c.effects) ? c.effects : []).map((e) => normalizeEffect(e)).filter(Boolean).slice(0, 8),
   };
   if (c.type !== 'item') {
@@ -77,6 +62,55 @@ function normalizeCard(c) {
   if (c.type === 'item') out.kind = 'custom';
   return out;
 }
+
+function normalizePack(pk) {
+  if (!pk) return null;
+  return {
+    id: /^p_[a-z0-9_]+$/i.test(pk.id || '') ? pk.id : newId('p'),
+    name: cleanText(pk.name, 20) || '카드팩',
+    cards: (Array.isArray(pk.cards) ? pk.cards : []).map(normalizeCard).filter(Boolean).slice(0, 60),
+  };
+}
+
+// ---------------- 카드팩 저장 / 불러오기 ----------------
+function getPacks() {
+  let raw = null;
+  try { raw = JSON.parse(localStorage.getItem(PACKS_KEY) || 'null'); } catch { raw = null; }
+  if (!Array.isArray(raw)) {
+    // 예전 형식 이전: 카드 목록 하나 → 「내 카드팩」
+    let old = [];
+    try { old = JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]'); } catch { old = []; }
+    const packs = [normalizePack({ name: '내 카드팩', cards: Array.isArray(old) ? old : [] })];
+    try { localStorage.setItem(PACKS_KEY, JSON.stringify(packs)); } catch { /* 무시 */ }
+    return packs;
+  }
+  const packs = raw.map(normalizePack).filter(Boolean);
+  return packs.length ? packs : [normalizePack({ name: '내 카드팩', cards: [] })];
+}
+
+function savePacks(packs) {
+  try {
+    localStorage.setItem(PACKS_KEY, JSON.stringify(packs));
+    return true;
+  } catch {
+    toast('저장 공간이 부족합니다. 이미지가 큰 카드를 줄이거나 지워 주세요.', 'bad');
+    return false;
+  }
+}
+
+function getActivePackId() {
+  try { return localStorage.getItem(ACTIVE_KEY) || ''; } catch { return ''; }
+}
+function setActivePackId(id) {
+  try { localStorage.setItem(ACTIVE_KEY, id); } catch { /* 무시 */ }
+}
+function getActivePack() {
+  const packs = getPacks();
+  return packs.find((p) => p.id === getActivePackId()) || packs[0];
+}
+// 팩에서 「덱에 넣기」로 표시된 카드
+const packCards = (pack) => (pack ? pack.cards.filter((c) => c.enabled !== false) : []);
+function getCustomCards() { return packCards(getActivePack()); }
 
 function templateCard(type, keep = {}) {
   const base = { name: keep.name || '새 카드', img: keep.img || '', flavor: keep.flavor || '', price: keep.price ?? 5,
@@ -116,11 +150,14 @@ function readImage(file) {
 }
 
 // ---------------- 편집 화면 ----------------
-const ED = { list: [], cur: null };
+const ED = { packs: [], packId: '', cur: null };
+const edPack = () => ED.packs.find((p) => p.id === ED.packId) || ED.packs[0];
 
 function openWorkshop() {
-  ED.list = getCustomCards();
-  ED.cur = ED.list[0] ? JSON.parse(JSON.stringify(ED.list[0])) : templateCard('weapon');
+  ED.packs = getPacks();
+  ED.packId = getActivePack().id;
+  const pk = edPack();
+  ED.cur = pk.cards[0] ? JSON.parse(JSON.stringify(pk.cards[0])) : templateCard('weapon');
   $('#title').classList.remove('show');
   $('#workshop').classList.add('show');
   renderWorkshop();
@@ -143,7 +180,6 @@ function setPath(obj, path, val) {
 }
 
 function effectRow(e, path, ctx) {
-  // ctx: card | coin, type: 카드 종류
   const armor = ED.cur.type === 'armor';
   const W = armor ? WHEN_TEXT_ARMOR : WHEN_TEXT;
   let whens;
@@ -163,15 +199,27 @@ function effectRow(e, path, ctx) {
   </div>`;
 }
 
+function packInfoHTML(pack) {
+  const s = packSummary(packCards(pack));
+  return `<b>${pack.name}</b> — 코스트 <b class="${s.overBudget ? 'neg' : 'pos'}">${s.cost}</b> / ${RULES.packBudget}
+    · <b class="${s.tooSmall ? 'neg' : 'pos'}">${s.count}장</b> (개인 덱 최소 ${RULES.packMin})
+    · ${s.valid ? '<span class="pos">✔ 대전 규격</span>' : `<span class="neg">✖ ${s.overBudget ? '코스트 초과' : '장수 부족'}</span>`}`;
+}
+
 function renderWorkshop() {
   const c = ED.cur;
-  // 왼쪽: 내 카드 목록
-  $('#ws-list').innerHTML = ED.list.length
-    ? ED.list.map((x) => `<div class="ws-item ${x.id === c.id ? 'cur' : ''}" data-id="${x.id}">
+  const pack = edPack();
+  // 팩 선택줄
+  $('#ws-pack').innerHTML = ED.packs.map((p) => `<option value="${p.id}" ${p.id === pack.id ? 'selected' : ''}>${p.name} (${p.cards.length}종)</option>`).join('');
+  $('#ws-pack-info').innerHTML = packInfoHTML(pack);
+
+  // 왼쪽: 팩의 카드 목록
+  $('#ws-list').innerHTML = pack.cards.length
+    ? pack.cards.map((x) => `<div class="ws-item ${x.id === c.id ? 'cur' : ''}" data-id="${x.id}">
         ${cardHTML(x)}
         <label class="ws-on"><input type="checkbox" data-toggle="${x.id}" ${x.enabled !== false ? 'checked' : ''}> 덱에 넣기 ×${x.count}</label>
       </div>`).join('')
-    : '<p class="muted">아직 만든 카드가 없습니다.<br>오른쪽에서 만들고 저장하세요.</p>';
+    : '<p class="muted">이 팩에는 아직 카드가 없습니다.<br>오른쪽에서 만들고 저장하세요.</p>';
 
   const t = c.type;
   const attrs = t === 'armor' ? Object.keys(ATTR) : Object.keys(ATTR).filter((k) => k !== 'all');
@@ -184,7 +232,7 @@ function renderWorkshop() {
     <div class="ws-grid">
       <label>이름 <input data-f="name" maxlength="20" value="${c.name}"></label>
       <label>종류
-        <select data-f="type" data-struct>${TYPES.map((x) => `<option value="${x}" ${t === x ? 'selected' : ''}>${TYPE_NAME[x]}</option>`).join('')}</select>
+        <select data-f="type">${TYPES.map((x) => `<option value="${x}" ${t === x ? 'selected' : ''}>${TYPE_NAME[x]}</option>`).join('')}</select>
       </label>
       ${t !== 'item' ? `<label>속성
         <select data-f="attr">${attrs.map((k) => `<option value="${k}" ${c.attr === k ? 'selected' : ''}>${ATTR[k].icon} ${ATTR[k].name}</option>`).join('')}</select>
@@ -236,65 +284,123 @@ function renderWsPreview() {
   const d = describeCard(c);
   $('#ws-preview').innerHTML = `
     <div class="ws-prev-card">${cardHTML(c, { big: true })}</div>
-    <div class="ws-prev-text"><b>${c.name}</b><div class="muted small">${d.head}</div>
+    <div class="ws-prev-text"><b>${c.name}</b> <span class="cost-tag">코스트 ${cardCost(c)}</span>
+      <span class="muted small">× ${c.count}장 = ${cardCost(c) * c.count}</span>
+      <div class="muted small">${d.head}</div>
       <div class="fx-lines">${d.lines.map((l) => `<span>${l}</span>`).join('')}</div>
       <div class="flavor">${c.flavor || ''}</div></div>`;
+}
+
+function commitPacks() {
+  if (!savePacks(ED.packs)) return false;
+  setActivePackId(ED.packId);
+  return true;
 }
 
 function wsSave() {
   const c = normalizeCard(ED.cur);
   if (!c) return;
-  const i = ED.list.findIndex((x) => x.id === c.id);
-  const next = [...ED.list];
-  if (i >= 0) next[i] = c; else next.push(c);
-  if (!saveCustomCards(next)) return;
-  ED.list = next;
+  const pack = edPack();
+  if (pack.cards.length >= 60 && !pack.cards.some((x) => x.id === c.id)) { toast('한 팩에는 최대 60종까지 넣을 수 있습니다', 'bad'); return; }
+  const before = pack.cards;
+  const i = pack.cards.findIndex((x) => x.id === c.id);
+  pack.cards = [...pack.cards];
+  if (i >= 0) pack.cards[i] = c; else pack.cards.push(c);
+  if (!commitPacks()) { pack.cards = before; return; }
   ED.cur = JSON.parse(JSON.stringify(c));
   toast(`「${c.name}」 저장 완료`);
   renderWorkshop();
 }
 
+function exportPack(pack) {
+  const data = { format: 'anomaly-field-pack', version: 1, name: pack.name, cards: pack.cards };
+  const blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${pack.name || 'cardpack'}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
 function initWorkshop() {
   $('#btn-workshop').onclick = openWorkshop;
   $('#ws-back').onclick = closeWorkshop;
+
+  // 팩 관리
+  $('#ws-pack').onchange = (e) => {
+    ED.packId = e.target.value;
+    setActivePackId(ED.packId);
+    const pk = edPack();
+    ED.cur = pk.cards[0] ? JSON.parse(JSON.stringify(pk.cards[0])) : templateCard('weapon');
+    renderWorkshop();
+  };
+  $('#ws-pack-new').onclick = () => {
+    const name = cleanText(prompt('새 카드팩 이름', '새 카드팩') || '', 20);
+    if (!name) return;
+    const pk = normalizePack({ name, cards: [] });
+    ED.packs.push(pk);
+    ED.packId = pk.id;
+    if (!commitPacks()) { ED.packs.pop(); return; }
+    ED.cur = templateCard('weapon');
+    renderWorkshop();
+  };
+  $('#ws-pack-rename').onclick = () => {
+    const pk = edPack();
+    const name = cleanText(prompt('카드팩 이름', pk.name) || '', 20);
+    if (!name) return;
+    pk.name = name;
+    commitPacks();
+    renderWorkshop();
+  };
+  $('#ws-pack-del').onclick = () => {
+    const pk = edPack();
+    if (ED.packs.length <= 1) { toast('팩이 하나뿐이라 지울 수 없습니다. 카드만 지워 주세요.', 'bad'); return; }
+    if (!confirm(`카드팩 「${pk.name}」과 안의 카드 ${pk.cards.length}종을 모두 지울까요?`)) return;
+    ED.packs = ED.packs.filter((p) => p !== pk);
+    ED.packId = ED.packs[0].id;
+    commitPacks();
+    const np = edPack();
+    ED.cur = np.cards[0] ? JSON.parse(JSON.stringify(np.cards[0])) : templateCard('weapon');
+    renderWorkshop();
+  };
+
+  // 카드
   $('#ws-new').onclick = () => { ED.cur = templateCard('weapon'); renderWorkshop(); };
   $('#ws-save').onclick = wsSave;
   $('#ws-copy').onclick = () => {
-    ED.cur = normalizeCard({ ...JSON.parse(JSON.stringify(ED.cur)), id: '', name: ED.cur.name + ' 사본' });
+    ED.cur = normalizeCard({ ...JSON.parse(JSON.stringify(ED.cur)), id: '', name: ED.cur.name.slice(0, 16) + ' 사본' });
     renderWorkshop();
-    toast('사본을 만들었습니다. 저장해야 목록에 추가됩니다.');
+    toast('사본을 만들었습니다. 저장해야 팩에 추가됩니다.');
   };
   $('#ws-del').onclick = () => {
-    const i = ED.list.findIndex((x) => x.id === ED.cur.id);
+    const pack = edPack();
+    const i = pack.cards.findIndex((x) => x.id === ED.cur.id);
     if (i < 0) { ED.cur = templateCard('weapon'); renderWorkshop(); return; }
-    if (!confirm(`「${ED.list[i].name}」을(를) 삭제할까요?`)) return;
-    const next = ED.list.filter((_, k) => k !== i);
-    if (!saveCustomCards(next)) return;
-    ED.list = next;
-    ED.cur = next[0] ? JSON.parse(JSON.stringify(next[0])) : templateCard('weapon');
+    if (!confirm(`「${pack.cards[i].name}」을(를) 삭제할까요?`)) return;
+    const before = pack.cards;
+    pack.cards = pack.cards.filter((_, k) => k !== i);
+    if (!commitPacks()) { pack.cards = before; return; }
+    ED.cur = pack.cards[0] ? JSON.parse(JSON.stringify(pack.cards[0])) : templateCard('weapon');
     renderWorkshop();
   };
-  $('#ws-export').onclick = () => {
-    const blob = new Blob([JSON.stringify(ED.list, null, 1)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'anomaly-field-cards.json';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  };
+  $('#ws-export').onclick = () => exportPack(edPack());
   $('#ws-import').onchange = async (ev) => {
     const f = ev.target.files[0];
     ev.target.value = '';
     if (!f) return;
     try {
       const data = JSON.parse(await f.text());
-      const cards = (Array.isArray(data) ? data : []).map(normalizeCard).filter(Boolean);
-      if (!cards.length) { toast('불러올 카드가 없습니다', 'bad'); return; }
-      const ids = new Set(ED.list.map((x) => x.id));
-      const merged = [...ED.list, ...cards.map((x) => (ids.has(x.id) ? { ...x, id: 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) } : x))];
-      if (!saveCustomCards(merged)) return;
-      ED.list = merged;
-      toast(`카드 ${cards.length}장을 불러왔습니다`);
+      // 새 형식 { name, cards } 또는 예전 형식 [카드...]
+      const raw = Array.isArray(data) ? { name: f.name.replace(/\.json$/i, ''), cards: data } : data;
+      const pk = normalizePack({ name: raw.name, cards: raw.cards });
+      if (!pk.cards.length) { toast('불러올 카드가 없습니다', 'bad'); return; }
+      pk.id = newId('p');
+      pk.cards = pk.cards.map((x) => ({ ...x, id: newId('c') }));
+      ED.packs.push(pk);
+      ED.packId = pk.id;
+      if (!commitPacks()) { ED.packs.pop(); return; }
+      ED.cur = JSON.parse(JSON.stringify(pk.cards[0]));
+      toast(`카드팩 「${pk.name}」 (${pk.cards.length}종)을 불러왔습니다`);
       renderWorkshop();
     } catch {
       toast('JSON 파일을 읽을 수 없습니다', 'bad');
@@ -303,15 +409,21 @@ function initWorkshop() {
 
   // 목록 클릭 / 덱 포함 토글
   $('#ws-list').addEventListener('click', (ev) => {
+    const pack = edPack();
     const tg = ev.target.closest('[data-toggle]');
     if (tg) {
-      const x = ED.list.find((k) => k.id === tg.dataset.toggle);
-      if (x) { x.enabled = tg.checked; saveCustomCards(ED.list); if (ED.cur.id === x.id) ED.cur.enabled = x.enabled; }
+      const x = pack.cards.find((k) => k.id === tg.dataset.toggle);
+      if (x) {
+        x.enabled = tg.checked;
+        commitPacks();
+        if (ED.cur.id === x.id) ED.cur.enabled = x.enabled;
+        $('#ws-pack-info').innerHTML = packInfoHTML(pack);
+      }
       return;
     }
     const item = ev.target.closest('.ws-item');
     if (item) {
-      const x = ED.list.find((k) => k.id === item.dataset.id);
+      const x = pack.cards.find((k) => k.id === item.dataset.id);
       if (x) { ED.cur = JSON.parse(JSON.stringify(x)); renderWorkshop(); }
     }
   });
@@ -354,7 +466,7 @@ function initWorkshop() {
       if (/\.key$/.test(el.dataset.f)) {
         const e = getPath(ED.cur, el.dataset.f.replace(/\.key$/, ''));
         const d = EFFECT_DEFS[e.key];
-        if (e.key === 'chargeBoost') { e.when = 'use'; e.target = 'self'; e.pot = e.pot || 4; e.cnt = e.cnt || 3; }
+        if (e.key === 'chargeBoost') { e.when = 'use'; e.target = 'self'; e.pot = 4; e.cnt = 3; }
         else if (e.when === 'use' && /^coins/.test(el.dataset.f)) e.when = 'hit';
         if (!d.pot) e.pot = 0;
         if (!d.cnt) e.cnt = 0;
@@ -392,11 +504,31 @@ function initWorkshop() {
   });
 }
 
-function updateTitleInfo() {
-  const list = getCustomCards().filter((c) => c.enabled !== false);
-  const n = list.reduce((s, c) => s + c.count, 0);
-  const el = $('#custom-info');
-  if (el) el.textContent = list.length ? `내 카드 ${list.length}종 (${n}장) 덱에 포함` : '';
+// 타이틀 / 멀티 로비의 팩 선택 상자 채우기
+function fillPackSelect(sel) {
+  if (!sel) return;
+  const packs = getPacks();
+  const active = getActivePack().id;
+  sel.innerHTML = packs.map((p) => {
+    const s = packSummary(packCards(p));
+    return `<option value="${p.id}" ${p.id === active ? 'selected' : ''}>${p.name} — ${s.count}장 · 코스트 ${s.cost}${s.valid ? '' : ' (규격 외)'}</option>`;
+  }).join('');
 }
 
-document.addEventListener('DOMContentLoaded', () => { initWorkshop(); updateTitleInfo(); });
+function updateTitleInfo() {
+  fillPackSelect($('#in-pack'));
+  fillPackSelect($('#mp-pack'));
+  const pk = getActivePack();
+  const s = packSummary(packCards(pk));
+  const el = $('#custom-info');
+  if (el) el.textContent = s.count ? `선택한 팩 「${pk.name}」: ${s.count}장 · 코스트 ${s.cost}/${RULES.packBudget}` : '';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initWorkshop();
+  updateTitleInfo();
+  for (const id of ['#in-pack', '#mp-pack']) {
+    const sel = $(id);
+    if (sel) sel.addEventListener('change', (e) => { setActivePackId(e.target.value); updateTitleInfo(); if (typeof netPackChanged === 'function') netPackChanged(); });
+  }
+});

@@ -8,7 +8,7 @@
 const KEYWORDS = {
   burn:    { name: '화상', icon: '🔥', debuff: true,  desc: '턴 시작 시 위력만큼 피해를 받고 횟수 -1' },
   bleed:   { name: '출혈', icon: '🩸', debuff: true,  desc: '공격할 때마다 위력만큼 피해를 받고 횟수 -1' },
-  tremor:  { name: '진동', icon: '〰', debuff: true,  desc: '「진동 폭발」을 당하면 위력만큼 정신력 감소. 턴 종료 시 횟수 -1' },
+  tremor:  { name: '진동', icon: '〰', debuff: true,  desc: '「진동 폭발」을 당하면 위력만큼 흐트러짐 피해. 턴 종료 시 횟수 -1' },
   rupture: { name: '파열', icon: '💥', debuff: true,  desc: '피격될 때마다 위력만큼 추가 피해를 받고 횟수 -1' },
   sinking: { name: '침잠', icon: '🌊', debuff: true,  desc: '피격될 때마다 위력만큼 정신력 감소(정신력이 최저면 대신 그만큼 피해), 횟수 -1' },
   poise:   { name: '호흡', icon: '🌬', debuff: false, desc: '공격 적중 시 위력×5% 확률로 치명타(피해 1.2배), 치명타가 나면 횟수 -1. 턴 종료 시 횟수 -1' },
@@ -16,6 +16,7 @@ const KEYWORDS = {
   fragile: { name: '취약', icon: '💔', debuff: true,  countOnly: true, desc: '방어력 절반. 턴 종료 시 횟수 -1' },
   stun:    { name: '기절', icon: '💫', debuff: true,  countOnly: true, desc: '다음 턴을 건너뜀' },
   panic:   { name: '공황', icon: '😱', debuff: true,  countOnly: true, hidden: true, desc: '정신력 붕괴 — 다음 턴을 건너뜀' },
+  staggered: { name: '흐트러짐', icon: '💢', debuff: true, countOnly: true, hidden: true, desc: '흐트러짐 게이지가 0 — 다음 턴을 건너뛰고, 방어구를 낼 수 없으며, 받는 피해 1.5배' },
 };
 
 // 턴 종료 시 횟수가 1 줄어드는 키워드
@@ -121,12 +122,11 @@ function rollCrit(attacker, dmg) {
   return dmg;
 }
 
-function tremorBurst(target, src) {
+function tremorBurst(target) {
   if (!has(target, 'tremor')) return;
   const s = target.status.tremor;
-  log(`${pname(target)} 〰 <b>진동 폭발!</b> 정신력 -${s.pot}`);
-  changeSp(target, -s.pot);
-  if (target.sp <= RULES.minSp) damage(target, Math.ceil(s.pot / 2), '〰 진동 폭발 여파', src);
+  log(`${pname(target)} 〰 <b>진동 폭발!</b> 흐트러짐 피해 ${s.pot}`);
+  staggerDamage(target, s.pot);
 }
 
 // ---------------- 카드 효과 ----------------
@@ -143,6 +143,7 @@ const EFFECT_DEFS = {
   fragile:     { label: '취약 부여',  cnt: true },
   stun:        { label: '기절 부여' },
   tremorBurst: { label: '진동 폭발' },
+  stagger:     { label: '흐트러짐 피해', pot: true },
   dmg:         { label: '고정 피해',  pot: true },
   heal:        { label: 'HP 회복',    pot: true },
   sp:          { label: '정신력 증감', pot: true, signed: true },
@@ -166,6 +167,7 @@ function effectText(e, armor = false) {
   else if (e.key === 'charge' || e.key === 'fragile') body = `${who}에게 ${KEYWORDS[e.key].name} ${e.cnt || 1}`;
   else if (e.key === 'stun') body = `${who} 기절`;
   else if (e.key === 'tremorBurst') body = `${who}에게 진동 폭발`;
+  else if (e.key === 'stagger') body = `${who}에게 흐트러짐 피해 ${e.pot || 0}`;
   else if (e.key === 'dmg') body = `${who}에게 ${e.pot || 0} 고정 피해`;
   else if (e.key === 'heal') body = `${who} HP +${e.pot || 0}`;
   else if (e.key === 'sp') body = `${who} 정신력 ${(e.pot || 0) >= 0 ? '+' : ''}${e.pot || 0}`;
@@ -180,11 +182,13 @@ function applyEffect(e, src, enemy) {
   if (!t || !t.alive || e.key === 'chargeBoost') return;
   if (KEYWORDS[e.key]) {
     if (e.key === 'stun') { addStatus(t, 'stun', 0, 1); floatText(t, '기절', 'dmg'); }
+    else if (KEYWORDS[e.key].hidden) return;
     else addStatus(t, e.key, e.pot || 0, e.cnt || 0);
     return;
   }
   switch (e.key) {
-    case 'tremorBurst': tremorBurst(t, src); break;
+    case 'tremorBurst': tremorBurst(t); break;
+    case 'stagger': log(`${pname(t)} 흐트러짐 피해 ${e.pot || 0}`); staggerDamage(t, e.pot || 0); break;
     case 'dmg': damage(t, e.pot || 0, '고정 피해', src); break;
     case 'heal': { const got = heal(t, e.pot || 0); if (got) log(`${pname(t)} HP ${got} 회복`); break; }
     case 'sp': changeSp(t, e.pot || 0); break;
