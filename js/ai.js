@@ -49,12 +49,14 @@ async function cpuTurn(p) {
       if (checkEnd()) return;
       continue;
     }
-    // 보급 구매: 손패가 적을 때 (밤에는 체력이 충분할 때만)
-    if (p.hand.length <= 4 && (!isNight() || p.hp > 45) && buyCard(p)) {
-      renderAll();
-      await sleep(400);
-      if (checkEnd()) return;
-      continue;
+    // 환전: 체력이 위험하면 돈·정신력을 HP로
+    const ex = card((c) => c.type === 'trade' && c.kind === 'exchange');
+    if (ex) {
+      const plan = cpuExchangePlan(p);
+      if (plan) {
+        await tradeExchange(p, ex, plan);
+        continue;
+      }
     }
     break;
   }
@@ -73,6 +75,15 @@ async function cpuTurn(p) {
 
   // 3) 방해 E.G.O
   const disrupt = p.hand.filter((c) => c.type === 'ego' && (c.kind === 'stun' || c.kind === 'steal') && cpuCanEgo(p, c));
+
+  // 거래 후보: 강매(판매 킬 포함) / 매입
+  const trade = cpuTradeOption(p);
+  const bestAtk = options.length ? Math.max(...options.map((o) => scoreAttack(p, o))) : 0;
+  if (trade && (trade.score > bestAtk || (G.difficulty === 'easy' && Math.random() < 0.3))) {
+    if (trade.kind === 'sell') await tradeSell(p, trade.card, trade.goods, trade.target);
+    else await tradeBuy(p, trade.card, trade.target, async (item) => cpuWantsBuy(p, item));
+    return;
+  }
 
   if (options.length) {
     let best;
@@ -125,4 +136,63 @@ function cpuDefend(p, info, attacker) {
   // 여유가 있으면 방어구를 1장만 쓰기
   if (G.difficulty === 'normal' && p.hp - info.atk > 45 && chosen.length > 1) return chosen.slice(0, 1);
   return chosen;
+}
+
+// ------------------------------------------------------------
+//  거래 AI
+// ------------------------------------------------------------
+// 카드의 '쓸모' (낮을수록 팔아치우기 좋음)
+function cardUse(c) {
+  if (c.type === 'weapon') return c.atk + fxOf(c).length * 3;
+  if (c.type === 'armor') return c.def * 0.9 + fxOf(c).length * 6;
+  if (c.type === 'ego') return 14;
+  if (c.type === 'trade') return 8;
+  return { heal: (c.power || 0) * 0.8, sp: c.power * 0.6, won: 6, cure: 6, draw: 8, gamble: 6 }[c.kind] || 5;
+}
+
+function cpuTradeOption(p) {
+  const opp = others(p);
+  if (!opp.length) return null;
+  let best = null;
+  const sellCard = p.hand.find((c) => c.type === 'trade' && c.kind === 'sell');
+  if (sellCard) {
+    for (const goods of p.hand) {
+      if (goods === sellCard || !goods.price) continue;
+      for (const t of opp) {
+        // 돈과 정신력(양수)으로 못 내는 만큼 HP가 깎임
+        const hpHit = Math.max(0, goods.price - t.won - Math.max(0, t.sp));
+        const gain = Math.min(goods.price, t.won);
+        let score = hpHit * 1.1 + gain * 0.4 - cardUse(goods) * 0.7;
+        if (hpHit >= t.hp) score += 100; // 판매 킬
+        if (!best || score > best.score) best = { kind: 'sell', card: sellCard, goods, target: t, score };
+      }
+    }
+  }
+  const buyCard = p.hand.find((c) => c.type === 'trade' && c.kind === 'buy');
+  if (buyCard && p.won >= 4 && p.hand.length < RULES.maxHand) {
+    const t = [...opp].sort((a, b) => b.hand.length - a.hand.length)[0];
+    const score = t.hand.length ? 4 + Math.min(p.won, 20) * 0.2 : -99;
+    if (!best || score > best.score) best = { kind: 'buy', card: buyCard, target: t, score };
+  }
+  return best && best.score > 2 ? best : null;
+}
+
+function cpuWantsBuy(p, item) {
+  const price = item.price || 0;
+  if (price === 0) return true;          // 공짜(E.G.O 등)는 무조건
+  if (price > p.won) return false;
+  return cardUse(item) >= price * 0.8 || (G.difficulty === 'hard' && p.won - price >= 10);
+}
+
+// 환전 계획: 위험할 때 돈·정신력 일부를 HP로 돌림
+function cpuExchangePlan(p) {
+  const L = exchangeLimits(p);
+  const danger = p.hp <= (G.difficulty === 'hard' ? 35 : 25);
+  if (!danger) return null;
+  const keepSp = Math.max(L.sp[0], Math.min(p.sp, G.difficulty === 'easy' ? 0 : 10));
+  let hp = Math.min(L.hp[1], L.total - keepSp);
+  let won = L.total - keepSp - hp;
+  if (won > L.won[1]) { hp += won - L.won[1]; won = L.won[1]; }
+  if (hp - p.hp < 8) return null;          // 별 차이 없으면 아껴둠
+  return { hp, sp: keepSp, won };
 }

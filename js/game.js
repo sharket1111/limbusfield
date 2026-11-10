@@ -30,7 +30,7 @@ const G = {
   over: false,
   speed: 1,
   difficulty: 'normal',
-  sel: { main: null, plus: [], target: null },
+  sel: { main: null, plus: [], target: null, goods: null },
   humanResolve: null,
   acting: false,
   hover: null,
@@ -223,8 +223,37 @@ function heal(p, n) {
 }
 
 function gainWon(p, n) {
-  p.won = Math.max(0, p.won + n);
-  if (n > 0) floatText(p, `+${n}원`, 'won');
+  const before = p.won;
+  p.won = Math.max(0, Math.min(RULES.maxWon, p.won + n));
+  const got = p.won - before;
+  if (got > 0) floatText(p, `+${got}원`, 'won');
+  return got;
+}
+
+// 지불: 돈 → (모자라면) 정신력(0까지) → HP 순서로 냄. 받는 쪽은 실제로 낸 돈만 받음
+function pay(payer, receiver, amount) {
+  let left = amount;
+  const fromWon = Math.min(payer.won, left);
+  payer.won -= fromWon;
+  left -= fromWon;
+  let fromSp = 0, fromHp = 0;
+  if (left > 0 && payer.sp > 0) {
+    fromSp = Math.min(payer.sp, left);
+    left -= fromSp;
+    changeSp(payer, -fromSp);
+  }
+  if (left > 0) {
+    fromHp = left;
+    damage(payer, fromHp, '', receiver);
+  }
+  if (fromWon > 0) {
+    floatText(payer, `-${fromWon}원`, 'spdown');
+    gainWon(receiver, fromWon);
+  }
+  const parts = [`${fromWon}원`];
+  if (fromSp) parts.push(`정신력 ${fromSp}`);
+  if (fromHp) parts.push(`<span class="neg">HP ${fromHp}</span>`);
+  return parts.join(' + ');
 }
 
 function kill(p, killer = null) {
@@ -232,11 +261,6 @@ function kill(p, killer = null) {
   for (const c of [...p.hand]) discardCard(p, c);
   log(`💀 ${pname(p)} 이(가) 쓰러졌습니다.`);
   toast(`${p.name} 탈락!`, 'bad');
-  if (killer && killer.alive && p.won > 0) {
-    log(`${pname(killer)} 이(가) ${p.won}원을 챙겼습니다.`);
-    gainWon(killer, p.won);
-  }
-  p.won = 0;
   // 누군가 쓰러지면: 처치자는 고양, 나머지는 동요
   for (const q of alive()) changeSp(q, q === killer ? 15 : -5, true);
 }
@@ -552,17 +576,94 @@ function pray(p) {
   log(`${pname(p)} 🙏 기도했습니다 (${tossed ? `${cname(tossed)} 버림, ` : ''}카드 ${n}장, 정신력 +10)`);
 }
 
-// 보급 구매: 돈을 내고 카드 1장 (턴 유지)
-function buyCard(p) {
-  if (p.won < RULES.buyCost || p.hand.length >= RULES.maxHand) return false;
-  p.won -= RULES.buyCost;
-  const n = drawCards(p, 1);
-  log(`${pname(p)} 🛒 보급 구매 (-${RULES.buyCost}원${n ? ', 카드 1장' : ''})`);
-  return true;
+// ------------------------------------------------------------
+//  거래: 매입 / 매각 / 환전 (상대가 막을 수 없음)
+// ------------------------------------------------------------
+// 매입: 상대 손패에서 무작위 1장 공개 → 살지 결정 (decide: async (card) => bool)
+async function tradeBuy(p, card, target, decide) {
+  discardCard(p, card);
+  showStage(p, [card], pname(target));
+  log(`${pname(p)} ${cname(card)} → ${pname(target)}`);
+  renderAll();
+  await sleep(500);
+  if (!target.hand.length) {
+    log(`${pname(target)}의 손패가 비어 있어 살 것이 없습니다.`);
+    return;
+  }
+  const item = pick(target.hand);
+  const price = item.price || 0;
+  showStage(p, [item], `${pname(target)}의 카드`, `가격 <b class="won">₩${price}</b>`);
+  renderAll();
+  await sleep(500);
+  const ok = p.won >= price && (await decide(item));
+  if (!ok) {
+    log(`${pname(p)} 이(가) ${pname(target)}의 ${p.human || target.human ? cname(item) : '카드'}를 사지 않았습니다.`);
+    return;
+  }
+  const paid = pay(p, target, price);
+  target.hand.splice(target.hand.indexOf(item), 1);
+  if (p.hand.length < RULES.maxHand) p.hand.push(item); else G.discard.push(item);
+  log(`🛒 ${pname(p)} 이(가) ${pname(target)}에게서 ${cname(item)}을(를) 매입 (${paid})`);
+  if (target.human) toast(`「${item.name}」을(를) ₩${price}에 매입당했습니다`, 'bad');
+  renderAll();
+  await sleep(600);
 }
 
-const isFreeAction = (c) => c.type === 'item' || (c.type === 'ego' && ['heal', 'cure'].includes(c.kind));
+// 매각: 내 카드 1장을 상대에게 강제로 판매
+async function tradeSell(p, card, goods, target) {
+  discardCard(p, card);
+  p.hand.splice(p.hand.indexOf(goods), 1);
+  const price = goods.price || 0;
+  showStage(p, [card, goods], pname(target), `판매가 <b class="won">₩${price}</b> — 거부할 수 없음`);
+  log(`💸 ${pname(p)} 이(가) ${pname(target)}에게 ${cname(goods)}을(를) ₩${price}에 강매`);
+  renderAll();
+  await sleep(700);
+  const paid = pay(target, p, price);
+  if (target.alive) {
+    if (target.hand.length < RULES.maxHand) target.hand.push(goods); else G.discard.push(goods);
+  } else {
+    G.discard.push(goods);
+  }
+  log(`${pname(target)} 지불: ${paid}`);
+  if (target.human) toast(`「${goods.name}」을(를) ₩${price}에 강매당했습니다`, 'bad');
+  renderAll();
+  await sleep(600);
+}
+
+// 환전: HP·정신력·돈을 합계를 유지한 채 재배분
+function exchangeLimits(p) {
+  return {
+    total: p.hp + p.sp + p.won,
+    hp: [1, RULES.maxHp],
+    sp: [Math.min(p.sp, 0), RULES.maxSp],   // 정신력은 0(또는 현재값) 아래로는 못 내림
+    won: [0, RULES.maxWon],
+  };
+}
+
+async function tradeExchange(p, card, plan) {
+  discardCard(p, card);
+  const L = exchangeLimits(p);
+  const ok = plan && plan.hp + plan.sp + plan.won === L.total &&
+    ['hp', 'sp', 'won'].every((k) => plan[k] >= L[k][0] && plan[k] <= L[k][1]);
+  if (!ok) return;
+  const before = `HP ${p.hp} / SP ${p.sp} / ₩${p.won}`;
+  const dhp = plan.hp - p.hp, dsp = plan.sp - p.sp, dwon = plan.won - p.won;
+  p.hp = plan.hp;
+  p.sp = plan.sp;
+  p.won = plan.won;
+  showStage(p, [card], pname(p), `${before} → <b>HP ${p.hp} / SP ${p.sp} / ₩${p.won}</b>`);
+  log(`💱 ${pname(p)} 환전: ${before} → HP ${p.hp} / SP ${p.sp} / ₩${p.won}`);
+  if (dhp) floatText(p, (dhp > 0 ? '+' : '') + dhp, dhp > 0 ? 'heal' : 'dmg');
+  else if (dsp) floatText(p, (dsp > 0 ? '+' : '') + dsp + ' SP', dsp > 0 ? 'sp' : 'spdown');
+  else if (dwon) floatText(p, (dwon > 0 ? '+' : '') + dwon + '원', 'won');
+  renderAll();
+  await sleep(700);
+}
+
+const isFreeAction = (c) => c.type === 'item' || (c.type === 'ego' && ['heal', 'cure'].includes(c.kind)) ||
+  (c.type === 'trade' && c.kind === 'exchange');
 const needsTarget = (c) =>
+  (c.type === 'trade' && (c.kind === 'buy' || c.kind === 'sell')) ||
   (c.type === 'weapon' && !hasFx(c, 'all')) ||
   (c.type === 'ego' && (c.kind === 'stun' || c.kind === 'steal' || (c.kind === 'attack' && !hasFx(c, 'all'))));
 // E.G.O는 정신력이 최저치 아래로 떨어지지 않을 때만 사용 가능
@@ -670,7 +771,7 @@ function endGame(win, rank) {
 //  사람 플레이어
 // ------------------------------------------------------------
 function humanTurn() {
-  G.sel = { main: null, plus: [], target: null };
+  G.sel = { main: null, plus: [], target: null, goods: null };
   return new Promise((res) => {
     G.humanResolve = res;
     renderAll();
@@ -680,7 +781,7 @@ function humanTurn() {
 function endHumanTurn() {
   const r = G.humanResolve;
   G.humanResolve = null;
-  G.sel = { main: null, plus: [], target: null };
+  G.sel = { main: null, plus: [], target: null, goods: null };
   if (r) r();
 }
 
@@ -693,7 +794,9 @@ function onHandClick(uid) {
   const s = G.sel;
 
   if (s.main && s.main.uid === uid) {
-    G.sel = { main: null, plus: [], target: s.target };
+    G.sel = { main: null, plus: [], target: s.target, goods: null };
+  } else if (s.main && s.main.type === 'trade' && s.main.kind === 'sell') {
+    s.goods = s.goods && s.goods.uid === uid ? null : card;
   } else if (s.plus.some((c) => c.uid === uid)) {
     s.plus = s.plus.filter((c) => c.uid !== uid);
   } else if (card.type === 'weapon' && s.main && s.main.type === 'weapon' && card.plus) {
@@ -701,7 +804,7 @@ function onHandClick(uid) {
   } else if (card.type === 'armor') {
     toast('방어구는 공격을 받을 때 사용합니다');
   } else {
-    G.sel = { main: card, plus: [], target: s.target };
+    G.sel = { main: card, plus: [], target: s.target, goods: null };
   }
   renderAll();
 }
@@ -719,7 +822,9 @@ function actionState() {
   const { main, target } = G.sel;
   if (!main) return { label: '카드를 선택하세요', ok: false };
   if (main.type === 'ego' && !canPayEgo(me, main)) return { label: `정신력 부족 (${main.cost} 소모)`, ok: false };
+  if (main.type === 'trade' && main.kind === 'sell' && !G.sel.goods) return { label: '팔 카드를 선택하세요', ok: false };
   if (needsTarget(main) && !target) return { label: '대상을 선택하세요', ok: false };
+  if (main.type === 'trade') return { label: { buy: '🛒 매입 (턴 종료)', sell: '💸 강매 (턴 종료)', exchange: '💱 환전 (턴 유지)' }[main.kind], ok: true };
   if (main.type === 'weapon') return { label: '⚔ 공격', ok: true };
   if (main.type === 'ego' && main.kind === 'attack') return { label: '✧ E.G.O 공격', ok: true };
   if (main.type === 'ego' && (main.kind === 'steal' || main.kind === 'stun')) return { label: '✧ E.G.O 발현 (턴 종료)', ok: true };
@@ -734,13 +839,29 @@ async function onAction() {
   G.acting = true;
   renderAll();
   try {
+    if (main.type === 'trade') {
+      if (main.kind === 'exchange') {
+        const plan = await humanExchange(me);
+        if (plan) await tradeExchange(me, main, plan);
+        G.sel = { main: null, plus: [], target: G.sel.target, goods: null };
+        G.acting = false;
+        renderAll();
+        return;
+      }
+      if (main.kind === 'buy') await tradeBuy(me, main, target, (item) => humanBuyDecide(me, target, item));
+      else await tradeSell(me, main, G.sel.goods, target);
+      G.acting = false;
+      checkEnd();
+      endHumanTurn();
+      return;
+    }
     if (main.type === 'weapon' || (main.type === 'ego' && main.kind === 'attack')) {
       await performAttack(me, [main, ...plus], target ? [target] : []);
       G.acting = false;
       endHumanTurn();
     } else if (isFreeAction(main)) {
       await useSupport(me, main, me);
-      G.sel = { main: null, plus: [], target: G.sel.target };
+      G.sel = { main: null, plus: [], target: G.sel.target, goods: null };
       G.acting = false;
       if (checkEnd()) { endHumanTurn(); return; }
       renderAll();
@@ -755,14 +876,6 @@ async function onAction() {
   }
 }
 
-function onBuy() {
-  if (!G.humanResolve || G.acting) return;
-  const me = human();
-  if (!buyCard(me)) return;
-  renderAll();
-  if (checkEnd()) endHumanTurn();
-}
-
 async function onPray() {
   if (!G.humanResolve || G.acting) return;
   const me = human();
@@ -772,6 +885,86 @@ async function onPray() {
   await sleep(400);
   G.acting = false;
   endHumanTurn();
+}
+
+// 매입 결정 창
+function humanBuyDecide(me, target, item) {
+  return new Promise((res) => {
+    const modal = $('#dialog');
+    modal.querySelector('.dlg-box').innerHTML = `
+      <h2>매입</h2>
+      <p>${pname(target)}의 손패에서 이 카드가 나왔습니다.</p>
+      <div class="def-cards">${cardHTML(item, { big: true })}</div>
+      <p>가격 <b class="won">₩${item.price || 0}</b> <span class="muted">(보유 ₩${me.won})</span></p>
+      <div class="def-actions">
+        <button class="btn primary" id="dlg-yes">🛒 매입</button>
+        <button class="btn" id="dlg-no">사지 않기</button>
+      </div>`;
+    const done = (v) => { modal.classList.remove('show'); res(v); };
+    $('#dlg-yes').onclick = () => done(true);
+    $('#dlg-no').onclick = () => done(false);
+    modal.classList.add('show');
+  });
+}
+
+// 환전 창: HP / 정신력 / 돈을 합계를 유지한 채 재배분
+function humanExchange(me) {
+  return new Promise((res) => {
+    const L = exchangeLimits(me);
+    const plan = { hp: me.hp, sp: me.sp, won: me.won };
+    const modal = $('#dialog');
+    const label = { hp: '❤ HP', sp: '🧠 정신력', won: '₩ 돈' };
+    const draw = () => {
+      const sum = plan.hp + plan.sp + plan.won;
+      const left = L.total - sum;
+      const valid = left === 0 && ['hp', 'sp', 'won'].every((k) => plan[k] >= L[k][0] && plan[k] <= L[k][1]);
+      modal.querySelector('.dlg-box').innerHTML = `
+        <h2>💱 환전</h2>
+        <p class="muted">HP·정신력·돈은 모두 1:1 가치입니다. 합계 <b>${L.total}</b>를 원하는 대로 다시 나누세요.</p>
+        <div class="ex-rows">${['hp', 'sp', 'won'].map((k) => `
+          <div class="ex-row">
+            <span class="ex-label">${label[k]}</span>
+            <button class="btn small" data-k="${k}" data-d="-10">-10</button>
+            <button class="btn small" data-k="${k}" data-d="-1">-1</button>
+            <input type="number" data-k="${k}" value="${plan[k]}" min="${L[k][0]}" max="${L[k][1]}">
+            <button class="btn small" data-k="${k}" data-d="1">+1</button>
+            <button class="btn small" data-k="${k}" data-d="10">+10</button>
+            <button class="btn small" data-k="${k}" data-max="1">최대</button>
+            <span class="muted small">${L[k][0]}~${L[k][1]}</span>
+          </div>`).join('')}</div>
+        <p>남은 값 <b class="${left ? 'neg' : 'pos'}">${left}</b>${left ? ' — 0이 되어야 합니다' : ''}</p>
+        <div class="def-actions">
+          <button class="btn primary" id="dlg-yes" ${valid ? '' : 'disabled'}>💱 환전</button>
+          <button class="btn" id="dlg-no">취소</button>
+        </div>`;
+      const clamp = (k, v) => Math.max(L[k][0], Math.min(L[k][1], v));
+      $$('button[data-k]', modal).forEach((b) => {
+        b.onclick = () => {
+          const k = b.dataset.k;
+          if (b.dataset.max) {
+            // 다른 항목을 최소로 줄이고 이 항목에 최대한 몰아줌 (넘치는 값은 다시 나머지에)
+            const rest = ['hp', 'sp', 'won'].filter((x) => x !== k);
+            rest.forEach((x) => (plan[x] = L[x][0]));
+            plan[k] = clamp(k, L.total - rest.reduce((sum, x) => sum + plan[x], 0));
+            let over = L.total - (plan.hp + plan.sp + plan.won);
+            for (const x of rest) {
+              const add = Math.min(over, L[x][1] - plan[x]);
+              plan[x] += add;
+              over -= add;
+            }
+          } else plan[k] = clamp(k, plan[k] + +b.dataset.d);
+          draw();
+        };
+      });
+      $$('input[data-k]', modal).forEach((inp) => {
+        inp.onchange = () => { plan[inp.dataset.k] = clamp(inp.dataset.k, Math.round(+inp.value || 0)); draw(); };
+      });
+      $('#dlg-yes').onclick = () => { if (valid) { modal.classList.remove('show'); res({ ...plan }); } };
+      $('#dlg-no').onclick = () => { modal.classList.remove('show'); res(null); };
+    };
+    draw();
+    modal.classList.add('show');
+  });
 }
 
 // 방어 선택 창 — 방어구를 내면 무기 vs 방어구 합
@@ -834,7 +1027,7 @@ function humanDefend(me, attacker, info) {
 // ------------------------------------------------------------
 //  렌더링
 // ------------------------------------------------------------
-const TYPE_NAME = { weapon: '무기', armor: '방어구', ego: 'E.G.O', item: '도구' };
+const TYPE_NAME = { weapon: '무기', armor: '방어구', ego: 'E.G.O', item: '도구', trade: '거래' };
 
 function cardHTML(c, opt = {}) {
   const a = ATTR[c.attr] || null;
@@ -842,11 +1035,14 @@ function cardHTML(c, opt = {}) {
   if (c.type === 'weapon') stat = `<div class="c-stat atk">${c.atk}</div>`;
   else if (c.type === 'armor') stat = `<div class="c-stat def">${c.def}</div>`;
   else if (c.type === 'ego') stat = `<div class="c-stat egoc">${c.cost}<small>SP</small></div>`;
+  else if (c.type === 'trade') stat = `<div class="c-stat trd">${{ buy: '🛒', sell: '💸', exchange: '💱' }[c.kind]}</div>`;
   else stat = `<div class="c-stat itm">◆</div>`;
 
   let sub = '';
   if (c.type === 'ego') {
     sub = { attack: `${c.power} 위력`, heal: `HP +${c.power}`, cure: '상태 해제', steal: '카드 강탈', stun: '기절' }[c.kind];
+  } else if (c.type === 'trade') {
+    sub = { buy: '매입', sell: '강매', exchange: '환전' }[c.kind];
   } else if (c.type === 'item') {
     sub = { heal: `HP +${c.power}`, sp: `정신력 +${c.power}`, won: `+${c.power}원`, cure: '상태 해제', draw: `${c.power}장 뽑기`, gamble: '???' }[c.kind];
   }
@@ -858,6 +1054,7 @@ function cardHTML(c, opt = {}) {
     <div class="c-name">${c.name}</div>
     ${sub ? `<div class="c-sub">${sub}</div>` : ''}
     <div class="c-tags">${tags.map((t) => `<span>${t}</span>`).join('')}</div>
+    <div class="c-price">₩${c.price || 0}</div>
   </div>`;
 }
 
@@ -915,12 +1112,13 @@ function renderMe() {
 
   const hand = $('#hand');
   const sel = G.sel;
-  const order = { weapon: 0, ego: 1, item: 2, armor: 3 };
+  const order = { weapon: 0, ego: 1, trade: 2, item: 3, armor: 4 };
   const val = (c) => c.atk || c.def || c.cost || 0;
   const sorted = [...me.hand].sort((a, b) => order[a.type] - order[b.type] || val(b) - val(a));
   hand.innerHTML = sorted.map((c) => {
     let cls = '';
     if (sel.main && sel.main.uid === c.uid) cls = 'sel-main';
+    else if (sel.goods && sel.goods.uid === c.uid) cls = 'sel-goods';
     else if (sel.plus.some((x) => x.uid === c.uid)) cls = 'sel-plus';
     else if (myTurn && sel.main && sel.main.type === 'weapon' && c.type === 'weapon' && c.plus) cls = 'can-plus';
     if (c.type === 'ego' && !canPayEgo(me, c)) cls += ' no-sp';
@@ -938,9 +1136,6 @@ function renderMe() {
   act.disabled = !myTurn || !st.ok || G.acting;
   $('#btn-pray').disabled = !myTurn || G.acting;
   $('#btn-cancel').disabled = !myTurn || G.acting || !sel.main;
-  const buy = $('#btn-buy');
-  buy.textContent = `🛒 보급 구매 (${RULES.buyCost}원)`;
-  buy.disabled = !myTurn || G.acting || me.won < RULES.buyCost || me.hand.length >= RULES.maxHand;
 
   // 공격 미리보기
   const prev = $('#preview');
@@ -950,6 +1145,13 @@ function renderMe() {
     prev.innerHTML = `<span style="color:${a.color}">${a.icon} ${a.name}</span> 위력 <b>${info.atk}</b> ~ ${info.atk + RULES.coins * RULES.coinPower}${info.fx.includes('twice') ? ' ×2' : ''}
       ${sel.target ? ` → ${sel.target.avatar} ${sel.target.name}` : ''}
       ${sel.main.type === 'weapon' && me.hand.some((c) => c.plus && c.type === 'weapon' && c !== sel.main && !sel.plus.includes(c)) ? '<span class="muted"> · 보조 무기를 덧붙일 수 있음</span>' : ''}`;
+  } else if (sel.main && sel.main.type === 'trade') {
+    const t = sel.target ? ` → ${sel.target.avatar} ${sel.target.name}` : '';
+    prev.innerHTML = {
+      buy: `🛒 상대 손패에서 무작위 1장을 보고 살지 결정합니다${t}`,
+      sell: sel.goods ? `💸 「${sel.goods.name}」을(를) <b class="won">₩${sel.goods.price || 0}</b>에 강매${t}` : '💸 팔 카드를 손패에서 고르세요 (비쌀수록 이득)',
+      exchange: '💱 HP·정신력·돈을 1:1로 다시 나눕니다',
+    }[sel.main.kind];
   } else if (myTurn) {
     prev.innerHTML = '<span class="muted">무기·E.G.O로 공격하거나, 도구를 쓰거나, 기도해서 턴을 넘기세요.</span>';
   } else {
@@ -969,6 +1171,7 @@ function renderInfo() {
   if (a) parts.push(`${a.icon} ${a.name}`);
   fxOf(c).forEach((f) => parts.push(FX_TEXT[f]));
   if (c.plus) parts.push('보조 무기 — 다른 무기에 덧붙여 공격력 합산');
+  parts.push(`가격 ₩${c.price || 0}`);
   box.innerHTML = `<b class="cn r${c.rarity || 1}">${c.name}</b> <span class="muted">${parts.join(' · ')}</span><div class="flavor">${c.flavor || ''}</div>`;
 }
 
@@ -1038,8 +1241,7 @@ function init() {
   };
   $('#btn-act').onclick = onAction;
   $('#btn-pray').onclick = onPray;
-  $('#btn-buy').onclick = onBuy;
-  $('#btn-cancel').onclick = () => { G.sel = { main: null, plus: [], target: null }; renderAll(); };
+  $('#btn-cancel').onclick = () => { G.sel = { main: null, plus: [], target: null, goods: null }; renderAll(); };
   $$('.open-rules').forEach((b) => (b.onclick = () => $('#rules').classList.add('show')));
   $('#rules-close').onclick = () => $('#rules').classList.remove('show');
   $('#btn-gallery').onclick = () => {
@@ -1054,7 +1256,7 @@ function init() {
     if (e.key === 'Escape') {
       $('#rules').classList.remove('show');
       $('#gallery').classList.remove('show');
-      if (G.humanResolve && !G.acting) { G.sel = { main: null, plus: [], target: null }; renderAll(); }
+      if (G.humanResolve && !G.acting) { G.sel = { main: null, plus: [], target: null, goods: null }; renderAll(); }
     }
   });
 }

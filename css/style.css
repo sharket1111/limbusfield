@@ -384,3 +384,16 @@ body.night {
   transition: background 1s;
 }
 body.night #stage { background: radial-gradient(circle at center, #18203d, var(--bg2) 70%); }
+
+/* ---------- 거래 ---------- */
+.card.t-trade::before { background: linear-gradient(90deg, #c99a3a, #ffe08a); }
+.card.t-trade { background: linear-gradient(170deg, #2b2616, #12100a); }
+.c-stat.trd { font-size: 28px; }
+.c-price { position: absolute; right: 6px; bottom: 4px; font-size: 10px; font-weight: 700; color: #f0c96a; }
+.card .c-tags { margin-bottom: 10px; }
+.card.sel-goods { transform: translateY(-10px) !important; border-color: #f0c96a; box-shadow: 0 0 0 2px #f0c96a, 0 0 18px #f0c96a66; }
+.dlg-box h2 { margin-top: 0; color: var(--gold); }
+.ex-rows { display: flex; flex-direction: column; gap: 8px; margin: 14px 0; }
+.ex-row { display: flex; align-items: center; gap: 6px; justify-content: center; flex-wrap: wrap; }
+.ex-label { width: 80px; text-align: left; font-weight: 700; }
+.ex-row input { width: 70px; text-align: center; }
