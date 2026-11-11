@@ -26,7 +26,7 @@ function scoreAttack(p, cards) {
   const fxs = info.effects.concat(...info.coins.map((c) => c.fx || []));
   for (const e of fxs) s += KEYWORDS[e.key] ? ((e.pot || 0) + (e.cnt || 0)) * 0.6 : e.key === 'stun' ? 6 : 2;
   if (info.fx.includes('twice')) s *= 1.8;
-  if (info.fx.includes('all')) s *= 0.7 * Math.max(1, others(p).length);
+  if (info.fx.includes('all')) s = (s - info.atk * (1 - headChance(p.sp))) * 0.7 * Math.max(1, others(p).length);
   if (info.fx.includes('pierce')) s += 4;
   for (const f of ['lifesteal', 'drainsp', 'mind', 'holy']) if (info.fx.includes(f)) s += 3;
   if (cards[0].type === 'ego') s -= cards[0].cost * 0.35; // 정신력 아끼기
@@ -45,13 +45,17 @@ async function cpuTurn(p) {
     if (hpLow) use = card((c) => c.type === 'item' && c.kind === 'heal') || card((c) => c.type === 'ego' && c.kind === 'heal' && cpuCanEgo(p, c));
     if (!use && p.sp <= (G.difficulty === 'hard' ? -10 : -20)) use = card((c) => c.type === 'item' && c.kind === 'sp');
     if (!use && hasBad) use = card((c) => c.type === 'item' && c.kind === 'cure');
-    if (!use) use = card((c) => c.type === 'item' && c.kind === 'won');
-    if (!use && p.hand.length <= 5 && (!isNight() || p.hp > 40)) use = card((c) => c.type === 'item' && c.kind === 'draw');
-    if (!use && G.difficulty !== 'easy' && p.hp > 40 && Math.random() < 0.3) use = card((c) => c.kind === 'gamble');
-    if (!use && Math.random() < 0.5) use = card((c) => c.type === 'item' && c.kind === 'custom' && !itemHitsEnemy(c));
+    // 급하지 않은 도구는 공격 수단이 없을 때만 (도구를 쓰면 턴이 끝남)
+    const canAttack = p.hand.some((c) => c.type === 'weapon' || (c.type === 'ego' && c.kind === 'attack' && cpuCanEgo(p, c)));
+    if (!use && !canAttack) {
+      use = card((c) => c.type === 'item' && c.kind === 'won');
+      if (!use && p.hand.length <= 5 && (!isNight() || p.hp > 40)) use = card((c) => c.type === 'item' && c.kind === 'draw');
+      if (!use && G.difficulty !== 'easy' && p.hp > 40) use = card((c) => c.kind === 'gamble');
+      if (!use) use = card((c) => c.type === 'item' && c.kind === 'custom' && !itemHitsEnemy(c));
+    }
     if (use) {
       await useSupport(p, use, p);
-      if (checkEnd()) return;
+      if (use.type === 'item' || checkEnd()) return;   // 도구는 턴 종료
       continue;
     }
     // 환전: 체력이 위험하면 돈·정신력을 HP로

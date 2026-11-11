@@ -143,36 +143,175 @@ function stgBar(p) {
 const handCount = (p) => (p.handCount != null ? p.handCount : p.hand.length);
 const ctrlBadge = (p) => (G.mode === 'solo' ? '' : `<span class="ctrl ${p.ctrl}">${p.ctrl === 'cpu' ? 'CPU' : '👤'}</span>`);
 
-function renderOpponents() {
-  const box = $('#opponents');
-  const targeting = G.humanResolve && !G.acting && G.sel.main && needsTarget(G.sel.main);
-  box.innerHTML = G.players.filter((p) => p.id !== G.meId).map((p) => `
-    <div class="opp ${p.alive ? '' : 'dead'} ${G.players[G.current] === p && !G.over ? 'active' : ''}
-      ${targeting && p.alive ? 'targetable' : ''} ${G.sel.target && G.sel.target.id === p.id ? 'targeted' : ''}" data-pid="${p.id}">
-      <div class="opp-av">${p.look ? portraitSVG(p.look) : p.avatar}</div>
-      <div class="opp-info">
-        <div class="opp-name"><span>${ctrlBadge(p)}${p.name}</span> <span class="st-row">${statusHTML(p)}</span></div>
-        ${bar(p.hp, RULES.maxHp, 'hp')}
-        ${stgBar(p)}
-        ${spBar(p)}
-        <div class="opp-hand">🂠 × ${handCount(p)} <span class="won">${p.won}안</span></div>
-      </div>
-    </div>`).join('');
-  $$('.opp', box).forEach((el) => (el.onclick = () => onTargetClick(+el.dataset.pid)));
+// ------------------------------------------------------------
+//  전투 무대 (메인 화면): 모든 플레이어가 캐릭터로 서 있고, 발 밑에 HP·흐트러짐·정신력·키워드
+//  나는 왼쪽, 다른 사람들은 오른쪽 (4명 이상이면 앞뒤 두 줄)
+// ------------------------------------------------------------
+function fieldLayout(n) {
+  const spread = (k, a, b) => (k === 1 ? [(a + b) / 2] : Array.from({ length: k }, (_, i) => a + ((b - a) * i) / (k - 1)));
+  if (n <= 3) return spread(n, 54, 86).map((x) => ({ x, b: 6, s: 1, z: 3 }));
+  // 4명 이상: 앞줄·뒷줄을 번갈아 지그재그로
+  return spread(n, 46, 90).map((x, i) => (i % 2 ? { x, b: 33, s: 0.82, z: 2 } : { x, b: 3, s: 1, z: 4 }));
+}
+
+const fieldTargeting = () => {
+  const c = G.dragCard || (G.humanResolve && !G.acting ? G.sel.main : null);
+  return !!c && needsTarget(c);
+};
+
+function renderField() {
+  const box = $('#fighters');
+  if (!box) return;
+  const st = $('#field-street');
+  if (st && !st.firstChild) st.innerHTML = streetSVG() + '<div class="rain"></div>';
+  const mine = me();
+  const others = G.players.filter((p) => p.id !== G.meId);
+  const lay = fieldLayout(others.length);
+  const spots = [[mine, { x: 20, b: 6, s: 1.06, z: 5 }], ...others.map((p, i) => [p, lay[i]])];
+  const targeting = fieldTargeting();
+  const cur = G.players[G.current];
+  const keep = new Set();
+  for (const [p, pos] of spots) {
+    if (!p) continue;
+    keep.add(String(p.id));
+    const look = p.look || randomLook(p.name);
+    const lookKey = JSON.stringify(look);
+    let el = box.querySelector(`.pf[data-pid="${p.id}"]`);
+    if (!el || el.dataset.look !== lookKey) {
+      if (el) el.remove();
+      el = document.createElement('div');
+      el.className = 'pf';
+      el.dataset.pid = p.id;
+      el.dataset.look = lookKey;
+      el.innerHTML = `<div class="pf-turn">▼</div><div class="pf-aim">🎯</div>
+        <div class="f-fig"><div class="ff-base"></div><svg class="ff-ring"></svg>
+          <div class="f-body ${p.id === G.meId ? '' : 'flip'}">${charSVG(look, { gear: null })}</div></div>
+        <div class="f-foot"></div>`;
+      el.onclick = () => { if (!DRAG.used) onTargetClick(p.id); };
+      box.appendChild(el);
+    }
+    const stag = has(p, 'staggered');
+    const team = p.id === G.meId ? 'me' : 'foe';
+    el.className = `pf t-${team} ${p.alive ? '' : 'dead'} ${cur === p && !G.over ? 'active' : ''}`
+      + ` ${targeting && p.alive && p.id !== G.meId ? 'targetable' : ''} ${G.sel.target && G.sel.target.id === p.id ? 'targeted' : ''}`
+      + ` ${G.defendReq && G.defendReq.attacker === p ? 'attacking' : ''} ${p.id === G.meId && G.defendReq ? 'defending' : ''}`;
+    el.style.cssText = `left:${pos.x}%;bottom:${pos.b}%;--s:${pos.s};z-index:${pos.z}`;
+    $('.ff-base', el).className = `ff-base t-${team}`;
+    const ring = $('.ff-ring', el);
+    ring.outerHTML = ringSVG(p, stag);
+    $('.f-foot', el).outerHTML = footHTML(p, {
+      stag,
+      extra: `${G.mode === 'solo' || p.id === G.meId ? '' : `<i class="ctrl ${p.ctrl}">${p.ctrl === 'cpu' ? 'CPU' : '👤'}</i>`}🂠 ${handCount(p)} · <span class="won">${p.won}안</span>`,
+    });
+  }
+  $$('.pf', box).forEach((el) => { if (!keep.has(el.dataset.pid)) el.remove(); });
+  $('#field').classList.toggle('aiming', targeting);
+  const hint = $('#field-hint');
+  if (hint) {
+    hint.textContent = G.dragCard ? (needsTarget(G.dragCard) ? '공격할 상대에게 놓으세요' : '무대에 놓으면 사용합니다')
+      : G.humanResolve && !G.acting && !G.defendReq ? '카드를 상대에게 끌어다 놓아 사용' : '';
+  }
+}
+
+// ------------------------------------------------------------
+//  카드 끌어다 놓기: 손패 카드를 적 캐릭터 위에 놓으면 그 대상에게 사용
+//  (대상이 필요 없는 카드는 무대 아무 곳에나 놓으면 사용)
+// ------------------------------------------------------------
+const DRAG = { card: null, el: null, ghost: null, x0: 0, y0: 0, pid: null, moved: false, used: false, over: null };
+
+function dragStart() {
+  const r = DRAG.el.getBoundingClientRect();
+  const g = DRAG.el.cloneNode(true);
+  g.classList.add('drag-ghost');
+  g.style.width = r.width + 'px';
+  g.style.height = r.height + 'px';
+  document.body.appendChild(g);
+  DRAG.ghost = g;
+  DRAG.el.classList.add('dragging');
+  DRAG.moved = true;
+  G.dragCard = DRAG.card;
+  G.hover = DRAG.card;
+  renderField();
+  renderInfo();
+}
+
+function dragMove(x, y) {
+  const g = DRAG.ghost;
+  g.style.transform = `translate(${x - g.offsetWidth / 2}px, ${y - g.offsetHeight * 0.75}px) rotate(-4deg)`;
+  const hit = document.elementFromPoint(x, y);
+  const pf = hit && hit.closest('.pf');
+  const inField = !!(hit && hit.closest('#field'));
+  if (DRAG.over) DRAG.over.classList.remove('drop-over');
+  DRAG.over = null;
+  const okTarget = pf && pf.classList.contains('targetable');
+  if (okTarget) { pf.classList.add('drop-over'); DRAG.over = pf; }
+  g.classList.toggle('can-drop', !!okTarget || (!needsTarget(DRAG.card) && inField));
+  DRAG.inField = inField;
+}
+
+function dragEnd(useIt) {
+  const card = DRAG.card, over = DRAG.over, inField = DRAG.inField;
+  if (DRAG.ghost) DRAG.ghost.remove();
+  if (DRAG.el) DRAG.el.classList.remove('dragging');
+  if (over) over.classList.remove('drop-over');
+  const moved = DRAG.moved;
+  Object.assign(DRAG, { card: null, el: null, ghost: null, pid: null, moved: false, over: null, inField: false });
+  G.dragCard = null;
+  if (moved) { DRAG.used = true; setTimeout(() => { DRAG.used = false; }, 0); }
+  if (!moved) return;
+  if (useIt && card && G.humanResolve && !G.acting) {
+    if (needsTarget(card)) {
+      if (over) return dropUse(card, G.players.find((q) => q.id === +over.dataset.pid));
+    } else if (inField) return dropUse(card, null);
+  }
+  renderAll();
+}
+
+function dropUse(card, target) {
+  const s = G.sel;
+  if (!(s.main && s.main.uid === card.uid)) G.sel = { main: card, plus: [], target: null, goods: null };
+  G.sel.plus = G.sel.plus.filter((c) => c.uid !== card.uid);
+  G.sel.target = target;
+  const st = actionState();
+  if (st.ok) onAction();
+  else { toast(st.label); renderAll(); }
+}
+
+function initDrag() {
+  const hand = $('#hand');
+  hand.addEventListener('pointerdown', (e) => {
+    const el = e.target.closest('.card');
+    if (!el || e.button > 0 || G.defendReq || !G.humanResolve || G.acting) return;
+    const card = me().hand.find((c) => c && c.uid === +el.dataset.uid);
+    if (!card || card.type === 'armor') return;
+    Object.assign(DRAG, { card, el, x0: e.clientX, y0: e.clientY, pid: e.pointerId, moved: false });
+  });
+  window.addEventListener('pointermove', (e) => {
+    if (!DRAG.card || e.pointerId !== DRAG.pid) return;
+    if (!DRAG.moved) {
+      const dx = e.clientX - DRAG.x0, dy = e.clientY - DRAG.y0;
+      if (Math.hypot(dx, dy) < 12) return;
+      // 터치에서 옆으로 미는 건 손패 넘기기
+      if (e.pointerType !== 'mouse' && Math.abs(dx) > Math.abs(dy)) { DRAG.card = null; return; }
+      dragStart();
+    }
+    e.preventDefault();
+    dragMove(e.clientX, e.clientY);
+  }, { passive: false });
+  window.addEventListener('pointerup', (e) => { if (DRAG.card && e.pointerId === DRAG.pid) dragEnd(true); });
+  window.addEventListener('pointercancel', (e) => { if (DRAG.card && e.pointerId === DRAG.pid) dragEnd(false); });
 }
 
 function renderMe() {
   const p = me();
   const myTurn = !!G.humanResolve;
   $('#me').innerHTML = `
-    <div class="me-card ${myTurn ? 'active' : ''} ${G.defendReq ? 'under-attack' : ''} ${p.alive ? '' : 'dead'}" data-pid="${p.id}">
+    <div class="me-card ${myTurn ? 'active' : ''} ${G.defendReq ? 'under-attack' : ''} ${p.alive ? '' : 'dead'}">
       <div class="opp-av">${p.look ? portraitSVG(p.look) : p.avatar}</div>
       <div class="opp-info">
-        <div class="opp-name">${p.name} <span class="st-row">${statusHTML(p)}</span></div>
-        ${bar(p.hp, RULES.maxHp, 'hp')}
-        ${stgBar(p)}
-        ${spBar(p)}
+        <div class="opp-name">${p.name}</div>
         <div class="opp-hand"><span class="won">${p.won}안</span> · 코인 앞면 ${Math.round(headChance(p.sp) * 100)}%</div>
+        <div class="me-turn">${G.defendReq ? '⚠ 공격받는 중' : myTurn ? '▶ 내 차례' : G.over ? '' : '대기 중'}</div>
       </div>
     </div>`;
 
@@ -195,7 +334,7 @@ function renderMe() {
     return cardHTML(c, { uid: true, cls });
   }).join('') || `<div class="muted empty-hand">${p.alive ? '손패가 없습니다' : '탈락 — 관전 중'}</div>`;
   $$('.card', hand).forEach((el) => {
-    el.onclick = () => onHandClick(+el.dataset.uid);
+    el.onclick = () => { if (!DRAG.used) onHandClick(+el.dataset.uid); };
     el.onmouseenter = () => { G.hover = p.hand.find((c) => c && c.uid === +el.dataset.uid); renderInfo(); };
   });
 
@@ -259,7 +398,7 @@ function pileText() {
 
 function renderAll() {
   if (!G.players.length || !me()) return;
-  renderOpponents();
+  renderField();
   renderMe();
   renderInfo();
   const left = RULES.nightTurn - G.turn;
@@ -337,7 +476,7 @@ function actionState() {
   if (main.type === 'weapon') return { label: '⚔ 공격', ok: true };
   if (main.type === 'ego' && main.kind === 'attack') return { label: '✧ E.G.O 공격', ok: true };
   if (main.type === 'ego' && (main.kind === 'steal' || main.kind === 'stun')) return { label: '✧ E.G.O 발현 (턴 종료)', ok: true };
-  if (itemHitsEnemy(main)) return { label: '사용 (턴 종료)', ok: true };
+  if (main.type === 'item') return { label: '사용 (턴 종료)', ok: true };
   return { label: '사용 (턴 유지)', ok: true };
 }
 
@@ -563,9 +702,22 @@ function closeDialogs() {
 // ------------------------------------------------------------
 //  화면 전환 / 결과
 // ------------------------------------------------------------
+// 휴대폰: 가능하면 전체 화면 + 가로 고정 (안 되면 세로일 때 안내 화면이 덮음)
+function lockLandscape() {
+  if (!matchMedia('(pointer: coarse)').matches) return;
+  const el = document.documentElement;
+  const lock = () => (screen.orientation && screen.orientation.lock ? screen.orientation.lock('landscape') : Promise.reject());
+  try {
+    const fs = !document.fullscreenElement && el.requestFullscreen ? el.requestFullscreen() : Promise.resolve();
+    fs.then(lock).catch(() => {});
+  } catch { /* 지원 안 함 */ }
+}
+
 function enterGameScreen() {
   $('#log').innerHTML = '';
+  $('#fighters').innerHTML = '';
   clearStageLocal('');
+  lockLandscape();
   document.body.classList.remove('night');
   for (const id of ['#title', '#multi', '#workshop', '#charedit']) $(id).classList.remove('show');
   $('#result').classList.remove('show');
@@ -674,6 +826,8 @@ function initUI() {
     G.mode = 'solo';
     showTitle();
   };
+  initDrag();
+  $('#btn-log').onclick = () => document.body.classList.toggle('log-open');
   $('#btn-act').onclick = onAction;
   $('#btn-pray').onclick = onPray;
   $('#btn-cancel').onclick = () => {

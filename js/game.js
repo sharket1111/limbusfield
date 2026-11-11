@@ -418,8 +418,8 @@ function clashSim(aBase, aCoins, spA, dBase, dCoins, spD, n = 400) {
   for (let i = 0; i < n; i++) {
     const r = runClash(aBase, aCoins, chA, dBase, dCoins, chD, rnd);
     rounds += r.rounds.length;
-    if (r.winner === 'a') { const dmg = aBase + coinSum(rollWith(r.aLeft, chA, rnd)); lose++; exp += dmg; max = Math.max(max, dmg); }
-    else if (r.winner === 'd') { win++; expD += dBase + coinSum(rollWith(r.dLeft, chD, rnd)); }
+    if (r.winner === 'a') { const dmg = planTotal(hitPlan(aBase, rollWith(r.aLeft, chA, rnd), aCoins.length)); lose++; exp += dmg; max = Math.max(max, dmg); }
+    else if (r.winner === 'd') { win++; expD += planTotal(hitPlan(dBase, rollWith(r.dLeft, chD, rnd), dCoins.length)); }
     else tie++;
   }
   return { win: win / n, tie: tie / n, lose: lose / n, exp: exp / n, expD: expD / n, max, rounds: rounds / n };
@@ -652,15 +652,17 @@ async function resolveHit(attacker, target, info) {
     const result = cl.winner === 'a' ? 'atk' : cl.winner === 'd' ? 'def' : 'tie';
     const W = cl.winner === 'a' ? attacker : target, L = cl.winner === 'a' ? target : attacker;
     const winfo = cl.winner === 'a' ? info : dinfo;
-    let strike = [], dmg = 0;
+    let strike = [], dmg = 0, plan = [];
     if (cl.winner !== 't') {
       strike = rollCoins(W, cl.winner === 'a' ? cl.aLeft : cl.dLeft);
-      dmg = winfo.atk + coinSum(strike);
+      const n = cl.winner === 'a' ? aCoins.length : dCoins.length;
+      plan = hitPlan(winfo.atk, strike, n, cl.winner === 'a' && info.fx.includes('all'));
+      dmg = planTotal(plan);
     }
     const last = cl.rounds[cl.rounds.length - 1];
     const ms = showClash(attacker, info, last.a, last.pa, target, dcards, last.d, last.pd, 'clash', result, dmg,
       result === 'atk' ? 'd' : result === 'def' ? 'a' : '', dinfo.atk,
-      { aN: aCoins.length, dN: dCoins.length, rounds: cl.rounds, strike: { s: cl.winner, coins: strike } });
+      { aN: aCoins.length, dN: dCoins.length, rounds: cl.rounds, strike: { s: cl.winner, coins: strike, hits: packHits(plan) } });
     log(`⚔ 합 ×${cl.rounds.length}! ${pname(attacker)} vs ${pname(target)} ${dcards.map(cname).join(' + ')} — ${cl.rounds.map((r) => `<b class="${r.w === 'a' ? 'neg' : r.w === 'd' ? 'pos' : ''}">${r.pa}:${r.pd}</b>`).join(' · ')}`);
     renderAll();
     await sleep(ms);
@@ -669,9 +671,9 @@ async function resolveHit(attacker, target, info) {
       floatText(target, '상쇄', 'block');
       return;
     }
-    log(`${pname(W)} 합 승리! 남은 코인 ${strike.length}개로 위력 <b>${dmg}</b> ${coinsHTML(strike)}`);
+    log(`${pname(W)} 합 승리! 남은 코인 ${strike.length}개로 ${plan.length}회 공격 ${coinsHTML(strike)}`);
     changeSp(W, 5, true); changeSp(L, -5, true);
-    landHit(W, L, dmg, winfo, strike);
+    strikeHits(W, L, winfo, plan);
     return;
   }
 
@@ -681,11 +683,14 @@ async function resolveHit(attacker, target, info) {
 
   // 무방비
   if (!contested) {
-    const ms = showClash(attacker, info, ca, pa, target, [], null, null, 'open', 'open', pa, 'd');
-    log(`${pname(attacker)} 위력 <b>${pa}</b> ${coinsHTML(ca)} → ${pname(target)} 무방비${pierce ? ' (관통)' : ''}`);
+    const plan = hitPlan(info.atk, ca, info.coins.length, info.fx.includes('all'));
+    const total = planTotal(plan);
+    const ms = showClash(attacker, info, ca, pa, target, [], null, null, 'open', 'open', total, 'd', 0,
+      { strike: { s: 'a', coins: ca, hits: packHits(plan) } });
+    log(`${pname(attacker)} ${coinsHTML(ca)} → ${pname(target)} 무방비 ${plan.length}회 공격${info.fx.includes('all') ? ' (광역: 앞면만 적중)' : ''}${pierce ? ' (관통)' : ''}`);
     renderAll();
     await sleep(ms);
-    landHit(attacker, target, pa, info, ca);
+    strikeHits(attacker, target, info, plan);
     return;
   }
 
@@ -757,7 +762,7 @@ function showClash(attacker, info, ca, pa, target, dcards, cd, pd, mode, result,
   const d = validateClash({
     aN: extra.aN, dN: extra.dN,
     rounds: (extra.rounds || []).map((r) => ({ a: pack(r.a), d: pack(r.d), pa: r.pa, pd: r.pd, w: r.w })),
-    strike: extra.strike ? { s: extra.strike.s, coins: pack(extra.strike.coins) } : null,
+    strike: extra.strike ? { s: extra.strike.s, coins: pack(extra.strike.coins), hits: extra.strike.hits || [] } : null,
     aId: attacker.id, dId: target.id, mode, result,
     aBase: info.atk, dBase, aCoins: pack(ca), dCoins: pack(cd), pa: pa || 0, pd: pd || 0,
     aCards: info.cards.map(cardRef), dCards: dcards.map(cardRef),
@@ -769,7 +774,64 @@ function showClash(attacker, info, ca, pa, target, dcards, cd, pd, mode, result,
   return clashDuration(d);
 }
 
-// 피해 적중 공통 처리
+// 코인별 타격 계획
+//  기본 공격력은 원래 코인 수(n)로 나눠 각 코인에 싣고, 앞면이면 그 코인의 위력이 더해짐
+//  광역(전체 공격)은 앞면 코인만 적중 — 뒷면 코인은 빗나감
+//  반환: [{ dmg, roll, miss }]
+function hitPlan(base, rolls, n, aoe) {
+  if (!rolls.length) return [{ dmg: base, roll: null, miss: false }];
+  n = Math.max(1, n, rolls.length);
+  const share = (i) => Math.floor((base * (i + 1)) / n) - Math.floor((base * i) / n);
+  return rolls.map((r, i) => ({ dmg: share(i) + (r.head ? r.power : 0), roll: r, miss: !!aoe && !r.head }));
+}
+const planTotal = (plan) => plan.reduce((s, h) => s + (h.miss ? 0 : h.dmg), 0);
+const packHits = (plan) => plan.map((h) => ({ d: h.dmg, m: h.miss ? 1 : 0 }));
+
+// 코인마다 한 번씩 때림 (치명타·흐트러짐 배율·코인 효과·파열/침잠은 타격마다, 정신력·흡수·카드 적중 효과는 한 번)
+function strikeHits(attacker, target, info, plan) {
+  let dealt = 0, landed = 0;
+  const stag = has(target, 'staggered');
+  plan.forEach((h, i) => {
+    if (!target.alive) return;
+    const tag = plan.length > 1 ? ` ${i + 1}타` : '';
+    if (h.miss) { log(`${pname(attacker)}${tag} 뒷면 — <span class="muted">빗나감</span>`); return; }
+    landed++;
+    let dmg = rollCrit(attacker, h.dmg);
+    if (stag) dmg = Math.ceil(dmg * RULES.staggerMult);
+    if (dmg > 0) {
+      damage(target, dmg, `<span class="muted">${info.name}${tag}</span>${stag ? ' 💢' : ''} 피격`, attacker);
+      staggerDamage(target, dmg);
+      dealt += dmg;
+    }
+    if (h.roll) applyEffects((h.roll.coin.fx || []).filter((e) => e.when === 'hit' || (e.when === 'heads' && h.roll.head)), attacker, target);
+    triggerOnHit(target, attacker);
+  });
+  if (!landed) {
+    floatText(target, '빗나감', 'block');
+    log(`${pname(attacker)}의 공격이 ${pname(target)}에게 모두 빗나갔습니다`);
+    return 0;
+  }
+  attacker.dmgDealt += dealt;
+  changeSp(attacker, 5, true);
+  changeSp(target, -Math.max(2, Math.floor(dealt / 2)), true);
+  if (info.fx.includes('lifesteal') && attacker.alive && dealt) {
+    const got = heal(attacker, Math.floor(dealt / 2));
+    if (got) log(`${pname(attacker)} 흡혈로 HP ${got} 회복`);
+  }
+  if (info.fx.includes('drainsp') && target.alive) {
+    log(`${pname(attacker)} 이(가) ${pname(target)}의 정신력 10 흡수`);
+    changeSp(target, -10);
+    changeSp(attacker, 10);
+  }
+  if (info.fx.includes('mind') && target.alive) {
+    log(`${pname(target)} 🌀 정신 피해 — 정신력 -10`);
+    changeSp(target, -10);
+  }
+  if (target.alive) applyEffects(info.effects.filter((e) => e.when === 'hit'), attacker, target);
+  return dealt;
+}
+
+// 피해 적중 공통 처리 (한 번에 들어가는 피해: 가드 후 피해, 반격 등)
 function landHit(attacker, target, dmg, info, rolls = []) {
   if (dmg <= 0) return;
   dmg = rollCrit(attacker, dmg);
@@ -968,7 +1030,7 @@ async function tradeExchange(p, card, plan) {
 }
 
 const itemHitsEnemy = (c) => c.type === 'item' && (c.effects || []).some((e) => e.target === 'enemy');
-const isFreeAction = (c) => (c.type === 'item' && !itemHitsEnemy(c)) || (c.type === 'ego' && ['heal', 'cure'].includes(c.kind)) ||
+const isFreeAction = (c) => (c.type === 'ego' && ['heal', 'cure'].includes(c.kind)) ||
   (c.type === 'trade' && c.kind === 'exchange');
 const needsTarget = (c) => itemHitsEnemy(c) ||
   (c.type === 'trade' && (c.kind === 'buy' || c.kind === 'sell')) ||

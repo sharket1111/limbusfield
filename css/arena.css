@@ -403,3 +403,19 @@ html[data-theme="light"] .c-stat.def.k-counter { color: #a8204f; }
   .arena.on .f-skill.sk-d { transform: translate(-58%, 0); }
   .sk-info { display: none; }
 }
+
+/* 광역 공격 뒷면 = 빗나감 */
+.f-miss { position: absolute; left: 50%; top: 30%; transform: translateX(-50%); z-index: 8; font-family: 'Noto Serif KR', serif; font-weight: 900; font-style: italic;
+  font-size: clamp(16px, 2vw, 28px); color: #c8d0dc; text-shadow: 0 2px 0 #000, 0 0 8px #000; animation: missUp calc(.7s * var(--spd)) ease-out forwards; pointer-events: none; }
+@keyframes missUp { from { opacity: 0; transform: translate(-50%, 10px); } 20% { opacity: 1; } to { opacity: 0; transform: translate(-50%, -24px); } }
+
+/* 꾸미기: 구역 / 슬라이더 */
+.ce-sec { display: flex; flex-direction: column; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.ce-sec:last-child { border-bottom: 0; }
+.ce-sec-title { font-family: 'Noto Serif KR', serif; font-weight: 900; color: var(--gold); letter-spacing: .08em; }
+.ce-label { width: 104px; }
+.ce-slider { align-items: center; }
+.ce-slider input { flex: 1; max-width: 320px; accent-color: var(--gold); }
+.ce-slider b { width: 48px; font-size: 13px; }
+.ce-left { position: sticky; top: 10px; align-self: start; }
+@media (max-width: 760px), (max-height: 520px) { .ce-left { position: static; } }
