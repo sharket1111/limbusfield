@@ -32,7 +32,12 @@ function normalizeEffect(e, coin = false) {
     pot: num(e.pot, d.signed ? -45 : 0, 99),
     cnt: num(e.cnt, 0, 99),
   };
-  if (d.kwSel) out.kw = KW_SEL[d.kwSel].includes(e.kw) ? e.kw : KW_SEL[d.kwSel][0];
+  if (d.kwSel) {
+    // 기본 키워드 목록 또는 나만의 키워드 id
+    const list = d.kwSel === 'custom' ? [] : KW_SEL[d.kwSel];
+    out.kw = list.includes(e.kw) || KW_ID_RE.test(e.kw || '') ? e.kw : list[0];
+    if (!out.kw) return null;
+  }
   if (e.key === 'reuse') out.cnt = num(e.cnt, 1, 5, 1);
   return out;
 }
@@ -64,8 +69,12 @@ function normalizeCard(c) {
   const allowFx = { weapon: ['all', 'pierce', 'twice', 'lifesteal'], ego: ['all', 'pierce'], armor: ['reflect'], item: [] }[c.type];
   out.fx = (Array.isArray(c.fx) ? c.fx : []).filter((f) => allowFx.includes(f));
   if (c.type === 'weapon') { out.atk = num(c.atk, 0, 60, 8); out.plus = !!c.plus; }
+  if (c.type === 'weapon' || c.type === 'ego') {
+    out.weight = num(c.weight, 1, 5, 1);
+    out.dtype = DTYPES[c.dtype] ? c.dtype : 'slash';
+  }
   if (c.type === 'armor') { out.def = num(c.def, 0, 60, 8); out.kind = ['guard', 'evade', 'counter'].includes(c.kind) ? c.kind : 'guard'; }
-  if (c.type === 'ego') { out.kind = 'attack'; out.power = num(c.power, 0, 60, 10); out.cost = num(c.cost, 0, 45, 10); }
+  if (c.type === 'ego') { out.kind = 'attack'; out.power = num(c.power, 0, 60, 10); out.cost = egoSpCost(out); out.egoFx = normalizeEgoFx(c.egoFx); }
   if (c.type === 'item') out.kind = 'custom';
   return out;
 }
@@ -76,6 +85,8 @@ function normalizePack(pk) {
     id: /^p_[a-z0-9_]+$/i.test(pk.id || '') ? pk.id : newId('p'),
     name: cleanText(pk.name, 20) || '카드팩',
     cards: (Array.isArray(pk.cards) ? pk.cards : []).map(normalizeCard).filter(Boolean).slice(0, 60),
+    sheet: normalizeSheet(pk.sheet),
+    keywords: (Array.isArray(pk.keywords) ? pk.keywords : []).map(normalizeKeyword).filter(Boolean).slice(0, RULES.maxKeywords),
   };
 }
 
@@ -206,23 +217,58 @@ function effectRow(e, path, ctx) {
     ${pre ? '<span class="eff-fixed">던지기 전</span>' : `<select data-f="${path}.when">${whens.map((w) => `<option value="${w}" ${e.when === w ? 'selected' : ''}>${W[w]}</option>`).join('')}</select>`}
     ${pre ? '' : `<select data-f="${path}.target"><option value="enemy" ${e.target === 'enemy' ? 'selected' : ''}>${armor ? '공격자' : '상대'}</option><option value="self" ${e.target === 'self' ? 'selected' : ''}>자신</option></select>`}
     <select data-f="${path}.key">${keyOptions}</select>
-    ${d.kwSel ? `<select data-f="${path}.kw">${KW_SEL[d.kwSel].map((k) => `<option value="${k}" ${e.kw === k ? 'selected' : ''}>${kwName(k)}</option>`).join('')}</select>` : ''}
+    ${d.kwSel ? kwSelect(d.kwSel, e.kw, `data-f="${path}.kw"`) : ''}
     ${d.pot ? `<label>${d.potLabel || '위력'} <input type="number" data-f="${path}.pot" data-num value="${e.pot}" min="${d.signed ? -45 : 0}" max="99"></label>` : ''}
     ${d.cnt ? `<label>${d.cntLabel || '횟수'} <input type="number" data-f="${path}.cnt" data-num value="${e.cnt}" min="0" max="99"></label>` : ''}
     <button class="btn small del" data-act="del" data-path="${path}" title="삭제">✕</button>
   </div>`;
 }
 
+// 키워드 선택 상자: 기본 키워드 + 지금 팩의 나만의 키워드
+function kwChoices(sel) {
+  const mine = (edPack() ? edPack().keywords : []).map((k) => k.id);
+  return sel === 'custom' ? mine : [...KW_SEL[sel], ...mine];
+}
+function kwSelect(sel, cur, attrs) {
+  const list = kwChoices(sel);
+  if (!list.length) return '<span class="muted small">먼저 「✴ 나만의 키워드」를 만드세요</span>';
+  return `<select ${attrs}>${list.map((k) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${kwPlain(k)}</option>`).join('')}</select>`;
+}
+
+// E.G.O 연출 설정 칸: 무기 · 복장 · 대사 · 배경 + 미리보기
+function egoFxForm(c) {
+  const f = normalizeEgoFx(c.egoFx);
+  c.egoFx = f;
+  return `<h3>E.G.O 연출 <span class="muted small">E.G.O를 쓸 때 나오는 연출과 합 장면의 모습</span></h3>
+    <div class="ws-grid egofx">
+      <label>무기 <select data-f="egoFx.gear">${EGO_GEARS.map(([k, l]) => `<option value="${k}" ${f.gear === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label>무기 색 <input type="color" data-f="egoFx.gearColor" value="${f.gearColor}"></label>
+      <label>복장 <select data-f="egoFx.outfit"><option value="">평소 옷 그대로</option>${LOOK_OPTIONS.outfit.map(([k, l]) => `<option value="${k}" ${f.outfit === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label>복장 색 <span class="egofx-color"><input type="color" data-f="egoFx.outfitColor" value="${f.outfitColor || '#2c3440'}" ${f.outfitColor ? '' : 'data-unset="1"'}>
+        ${f.outfitColor ? '<button class="btn small" data-act="egoOutfitColorOff">그대로</button>' : '<span class="muted small">평소 색</span>'}</span></label>
+      <label>배경 <select data-f="egoFx.bg">${EGO_BGS.map(([k, l]) => `<option value="${k}" ${f.bg === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      ${f.bg === 'color' ? `<label>배경 색 <input type="color" data-f="egoFx.bgColor" value="${f.bgColor}"></label>` : ''}
+      ${f.bg === 'img' ? `<label>배경 사진 <span><label class="btn small">📷 고르기<input type="file" accept="image/*" id="ws-egobg-in" hidden></label> ${f.bgImg ? '<span class="pos small">✔</span>' : '<span class="muted small">없음</span>'}</span></label>` : ''}
+    </div>
+    <label class="ws-flavor">대사 <input data-f="egoFx.quote" maxlength="60" value="${f.quote}" placeholder="비우면 카드 설명이 대사로 나옵니다"></label>
+    <button class="btn small" data-act="egoPreview">▶ 연출 미리보기</button>`;
+}
+
 function packInfoHTML(pack) {
-  const s = packSummary(packCards(pack));
-  return `<b>${pack.name}</b> — 코스트 <b class="${s.overBudget ? 'neg' : 'pos'}">${s.cost}</b> / ${RULES.packBudget}
+  previewKeywords(pack.keywords);
+  const s = packSummary(packCards(pack), pack.keywords);
+  const kwCost = pack.keywords.reduce((t, k) => t + keywordCost(k), 0);
+  const sh = sheetSummary(pack.sheet);
+  return `<b>${pack.name}</b> — 코스트 <b class="${s.overBudget ? 'neg' : 'pos'}">${s.cost}</b> / ${RULES.packBudget}${kwCost ? ` <span class="muted">(키워드 ${kwCost} 포함)</span>` : ''}
     · <b class="${s.tooSmall ? 'neg' : 'pos'}">${s.count}장</b> (개인 덱 최소 ${RULES.packMin})
-    · ${s.valid ? '<span class="pos">✔ 대전 규격</span>' : `<span class="neg">✖ ${s.overBudget ? '코스트 초과' : '장수 부족'}</span>`}`;
+    · 스탯 <b class="${sh.valid ? 'pos' : 'neg'}">${sh.points}</b> / ${sh.budget}
+    · ${s.valid && sh.valid ? '<span class="pos">✔ 대전 규격</span>' : `<span class="neg">✖ ${!sh.valid ? '스탯 포인트 초과' : s.overBudget ? '코스트 초과' : '장수 부족'}</span>`}`;
 }
 
 function renderWorkshop() {
   const c = ED.cur;
   const pack = edPack();
+  previewKeywords(pack.keywords);
   // 팩 선택줄
   $('#ws-pack').innerHTML = ED.packs.map((p) => `<option value="${p.id}" ${p.id === pack.id ? 'selected' : ''}>${p.name} (${p.cards.length}종)</option>`).join('');
   $('#ws-pack-info').innerHTML = packInfoHTML(pack);
@@ -237,8 +283,8 @@ function renderWorkshop() {
 
   const t = c.type;
   const attrs = t === 'armor' ? Object.keys(ATTR) : Object.keys(ATTR).filter((k) => k !== 'all');
-  const fxOpts = { weapon: [['all', '전체 공격'], ['pierce', '관통 (방어 무시)'], ['twice', '2회 공격'], ['lifesteal', '흡혈']],
-    ego: [['all', '전체 공격'], ['pierce', '관통 (방어 무시)']], armor: c.kind === 'guard' ? [['reflect', '반사 (막아낸 피해의 절반 반사)']] : [], item: [] }[t];
+  const fxOpts = { weapon: [['all', '전체 공격'], ['pierce', '방어 무시 (가드 불가)'], ['twice', '2회 공격'], ['lifesteal', '흡혈']],
+    ego: [['all', '전체 공격'], ['pierce', '방어 무시 (가드 불가)']], armor: c.kind === 'guard' ? [['reflect', '반사 (막아낸 피해의 절반 반사)']] : [], item: [] }[t];
   const statLabel = { weapon: '공격력', armor: '수비 위력', ego: '위력' }[t];
   const statKey = { weapon: 'atk', armor: 'def', ego: 'power' }[t];
 
@@ -248,14 +294,18 @@ function renderWorkshop() {
       <label>종류
         <select data-f="type">${TYPES.map((x) => `<option value="${x}" ${t === x ? 'selected' : ''}>${TYPE_NAME[x]}</option>`).join('')}</select>
       </label>
-      ${t !== 'item' ? `<label>속성
+      ${t !== 'item' ? `<label>속성 (색·아이콘)
         <select data-f="attr">${attrs.map((k) => `<option value="${k}" ${c.attr === k ? 'selected' : ''}>${ATTR[k].icon} ${ATTR[k].name}</option>`).join('')}</select>
       </label>` : ''}
       ${statKey ? `<label>${statLabel} <input type="number" data-f="${statKey}" data-num min="0" max="60" value="${c[statKey]}"></label>` : ''}
       ${t === 'armor' ? `<label>수비 종류
         <select data-f="kind">${[['guard', '🛡 가드 (여러 장 동시)'], ['evade', '💨 회피'], ['counter', '↩ 반격']].map(([k, l]) => `<option value="${k}" ${c.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
       </label>` : ''}
-      ${t === 'ego' ? `<label>소모 정신력 <input type="number" data-f="cost" data-num min="0" max="45" value="${c.cost}"></label>` : ''}
+      ${t === 'ego' ? `<label title="카드 코스트 × 5 (최대 60)">소모 정신력 (자동) <input type="number" value="${egoSpCost(normalizeCard(c) || c)}" disabled></label>` : ''}
+      ${t === 'weapon' || t === 'ego' ? `<label>공격 유형
+        <select data-f="dtype">${Object.entries(DTYPES).map(([k, v]) => `<option value="${k}" ${dtypeOf(c) === k ? 'selected' : ''}>${v.icon} ${v.name}</option>`).join('')}</select></label>` : ''}
+      ${t === 'weapon' || t === 'ego' ? `<label title="한 번에 맞는 사람 수. 고른 대상 + 나머지 상대 중 무작위">공격 가중치 (맞는 사람 수)
+        <input type="number" data-f="weight" data-num min="1" max="5" value="${c.weight || 1}" ${c.fx.includes('all') ? 'disabled' : ''}></label>` : ''}
       <label>가격(안) <input type="number" data-f="price" data-num min="0" max="99" value="${c.price}"></label>
       <label>덱 장수 <input type="number" data-f="count" data-num min="1" max="5" value="${c.count}"></label>
       <label>죄악 (카드 색)
@@ -276,6 +326,7 @@ function renderWorkshop() {
       ${fxOpts.map(([k, l]) => `<label><input type="checkbox" data-fx="${k}" ${c.fx.includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}
     </div>` : ''}
 
+    ${t === 'ego' ? egoFxForm(c) : ''}
     <h3>${t === 'item' ? '사용 효과' : '카드 효과'} <span class="muted small">${t === 'armor' ? '수비 시 / 수비 성공 시 (반격 성공 시 적중 효과처럼 발동)' : t === 'item' ? '사용하면 바로 발동' : '사용 시 / 적중 시'}</span></h3>
     <div class="eff-list">${c.effects.map((e, i) => effectRow(e, `effects.${i}`, 'card')).join('') || '<p class="muted small">효과 없음</p>'}</div>
     <button class="btn small" data-act="addEff" data-path="effects">+ 효과 추가</button>
@@ -334,7 +385,7 @@ function wsSave() {
 }
 
 function exportPack(pack) {
-  const data = { format: 'anomaly-field-pack', version: 1, name: pack.name, cards: pack.cards };
+  const data = { format: 'anomaly-field-pack', version: 2, name: pack.name, cards: pack.cards, sheet: pack.sheet, keywords: pack.keywords };
   const blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -344,6 +395,7 @@ function exportPack(pack) {
 }
 
 function initWorkshop() {
+  initPackExtras();
   $('#btn-workshop').onclick = openWorkshop;
   $('#ws-back').onclick = closeWorkshop;
 
@@ -413,14 +465,14 @@ function initWorkshop() {
       const data = JSON.parse(await f.text());
       // 새 형식 { name, cards } 또는 예전 형식 [카드...]
       const raw = Array.isArray(data) ? { name: f.name.replace(/\.json$/i, ''), cards: data } : data;
-      const pk = normalizePack({ name: raw.name, cards: raw.cards });
-      if (!pk.cards.length) { toast('불러올 카드가 없습니다', 'bad'); return; }
+      const pk = normalizePack({ name: raw.name, cards: raw.cards, sheet: raw.sheet, keywords: raw.keywords });
+      if (!pk.cards.length && !pk.keywords.length) { toast('불러올 카드가 없습니다', 'bad'); return; }
       pk.id = newId('p');
       pk.cards = pk.cards.map((x) => ({ ...x, id: newId('c') }));
       ED.packs.push(pk);
       ED.packId = pk.id;
       if (!commitPacks()) { ED.packs.pop(); return; }
-      ED.cur = JSON.parse(JSON.stringify(pk.cards[0]));
+      ED.cur = pk.cards[0] ? JSON.parse(JSON.stringify(pk.cards[0])) : templateCard('weapon');
       toast(`카드팩 「${pk.name}」 (${pk.cards.length}종)을 불러왔습니다`);
       renderWorkshop();
     } catch {
@@ -460,6 +512,10 @@ function initWorkshop() {
   // 선택 / 체크: 구조가 바뀔 수 있으니 다시 그림
   form.addEventListener('change', async (ev) => {
     const el = ev.target;
+    if (el.id === 'ws-egobg-in') {
+      try { ED.cur.egoFx.bgImg = await readImage(el.files[0]); renderWorkshop(); } catch (e) { toast(e.message, 'bad'); }
+      return;
+    }
     if (el.id === 'ws-img-in') {
       try {
         ED.cur.img = await readImage(el.files[0]);
@@ -493,7 +549,7 @@ function initWorkshop() {
           e.pot = { chargeBoost: 4, reuse: 0 }[e.key] ?? 3;
           e.cnt = { chargeBoost: 3, pwrHighSp: 20, reuse: 1 }[e.key] ?? 0;
         } else if (e.when === 'use' && /^coins/.test(el.dataset.f)) e.when = 'hit';
-        if (d.kwSel && !KW_SEL[d.kwSel].includes(e.kw)) e.kw = KW_SEL[d.kwSel][0];
+        if (d.kwSel && !kwChoices(d.kwSel).includes(e.kw)) e.kw = kwChoices(d.kwSel)[0];
         if (!d.pot) e.pot = 0;
         if (!d.cnt) e.cnt = 0;
         if (d.pot && !e.pot) e.pot = 2;
@@ -526,9 +582,222 @@ function initWorkshop() {
       getPath(c, parts.join('.')).splice(idx, 1);
     } else if (act === 'noimg') {
       c.img = '';
+    } else if (act === 'egoOutfitColorOff') {
+      c.egoFx.outfitColor = '';
+    } else if (act === 'egoPreview') {
+      previewEgoCine(normalizeCard(c) || c);
+      return;
     }
     renderWorkshop();
   });
+}
+
+// ------------------------------------------------------------
+//  캐릭터 스탯 / 나만의 키워드 편집 창 (지금 공방에서 고른 팩)
+// ------------------------------------------------------------
+// 효과 한 줄 (패시브·키워드 특수 효과용): 대상 / 효과 / 키워드 / 위력 / 횟수
+function fxRow(e, path, dataAttr, selfLabel = '자신', enemyLabel = '상대') {
+  const keys = Object.keys(EFFECT_DEFS).filter((k) => !EFFECT_DEFS[k].coinOnly && !EFFECT_DEFS[k].preRoll);
+  const d = EFFECT_DEFS[e.key];
+  return `<div class="eff-row">
+    <select ${dataAttr}="${path}.target"><option value="enemy" ${e.target === 'enemy' ? 'selected' : ''}>${enemyLabel}</option><option value="self" ${e.target === 'self' ? 'selected' : ''}>${selfLabel}</option></select>
+    <select ${dataAttr}="${path}.key">${keys.map((k) => `<option value="${k}" ${e.key === k ? 'selected' : ''}>${EFFECT_DEFS[k].label}</option>`).join('')}</select>
+    ${d.kwSel ? kwSelect(d.kwSel, e.kw, `${dataAttr}="${path}.kw"`) : ''}
+    ${d.pot ? `<label>${d.potLabel || '위력'} <input type="number" ${dataAttr}="${path}.pot" data-num value="${e.pot}" min="${d.signed ? -45 : 0}" max="99"></label>` : ''}
+    ${d.cnt ? `<label>${d.cntLabel || '횟수'} <input type="number" ${dataAttr}="${path}.cnt" data-num value="${e.cnt}" min="0" max="99"></label>` : ''}
+    <button class="btn small del" data-del="${path}" title="삭제">✕</button>
+  </div>`;
+}
+const newFx = () => ({ when: 'use', target: 'self', key: 'poise', pot: 2, cnt: 2 });
+// 효과 종류를 바꿨을 때 기본값 정리
+function fixFx(e) {
+  const d = EFFECT_DEFS[e.key];
+  if (!d) return;
+  if (d.kwSel && !kwChoices(d.kwSel).includes(e.kw)) e.kw = kwChoices(d.kwSel)[0];
+  if (!d.pot) e.pot = 0; else if (!e.pot) e.pot = 2;
+  if (!d.cnt) e.cnt = 0; else if (!e.cnt) e.cnt = 2;
+}
+
+function renderSheet() {
+  const pk = edPack();
+  pk.sheet = normalizeSheet(pk.sheet);
+  const sh = pk.sheet, sum = sheetSummary(sh);
+  const stepRow = (k) => {
+    const [lo, hi, step, def] = SHEET_RANGE[k];
+    const pts = (sh[k] - def) / step;
+    return `<div class="sh-row"><span class="sh-label">${SHEET_LABEL[k]}</span>
+      <input type="range" min="${lo}" max="${hi}" step="${step}" value="${sh[k]}" data-sh="${k}" data-num>
+      <b class="sh-val">${sh[k]}</b><span class="sh-pts ${pts > 0 ? 'neg' : pts < 0 ? 'pos' : ''}">${pts > 0 ? '-' : pts < 0 ? '+' : ''}${Math.abs(pts)}P</span></div>`;
+  };
+  $('#sheet-pack').textContent = `— ${pk.name}`;
+  $('#sheet-body').innerHTML = `
+    <div class="sh-sum ${sum.valid ? '' : 'over'}">스탯 포인트 <b>${sum.points}</b> / ${sum.budget}
+      <span class="muted small">기본값에서 올리면 포인트를 쓰고, 내리면 돌려받습니다. 상한을 넘으면 대전에 쓸 수 없습니다.</span></div>
+    <h3>기본 능력치</h3>
+    ${stepRow('hp')}${stepRow('sp')}${stepRow('stg')}
+    <h3>내성 <span class="muted small">받는 피해 배율 — 공격 유형마다</span></h3>
+    ${Object.entries(DTYPES).map(([d, v]) => {
+      const cur = sh.res[d];
+      return `<div class="sh-row"><span class="sh-label">${v.icon} ${v.name} 내성</span>
+        <select data-sh="res.${d}" data-num>${RES_LEVELS.map(([m, nm, p]) => `<option value="${m}" ${cur === m ? 'selected' : ''}>${nm} ×${m} (${p > 0 ? '-' : p < 0 ? '+' : '±'}${Math.abs(p)}P)</option>`).join('')}</select></div>`;
+    }).join('')}
+    <h3>패시브 <span class="muted small">조건이 되면 자동으로 발동 (최대 ${RULES.maxPassives}개)</span></h3>
+    ${sh.passives.map((ps, i) => `<div class="sh-passive">
+        <select data-sh="passives.${i}.on">${Object.entries(PASSIVE_ON).map(([k, l]) => `<option value="${k}" ${ps.on === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        ${fxRow(ps.e, `passives.${i}.e`, 'data-sh').replace(`data-del="passives.${i}.e"`, `data-del="passives.${i}"`)}
+        <span class="sh-pts neg">-${passiveCost(ps)}P</span>
+      </div>`).join('') || '<p class="muted small">패시브 없음</p>'}
+    ${sh.passives.length < RULES.maxPassives ? '<button class="btn small" data-add="passive">+ 패시브 추가</button>' : ''}`;
+}
+
+function renderKwm() {
+  const pk = edPack();
+  previewKeywords(pk.keywords);
+  const total = pk.keywords.reduce((s, k) => s + keywordCost(k), 0);
+  $('#kwm-body').innerHTML = `
+    <p class="muted small">기본 키워드를 바탕으로 이름·색을 바꾸고, <b>발동할 때마다</b> 함께 나가는 특수 효과를 넣습니다.
+      만든 키워드는 이 팩의 카드 효과(「나만의 키워드 부여」)와 패시브에서 쓸 수 있고, 만드는 코스트가 팩 코스트에 더해집니다.
+      지금 합계 <b>${total}</b> (최대 ${RULES.maxKeywords}개)</p>
+    ${pk.keywords.map((k, i) => `<div class="kwm-box">
+      <div class="kwm-head">
+        <span class="kwm-icon">${KEYWORDS[k.id] ? KEYWORDS[k.id].icon : kwIconHTML(k.base, k.hue)}</span>
+        <input data-kw="${i}.name" maxlength="8" value="${k.name}">
+        <label>기반 <select data-kw="${i}.base">${KW_BASES.map((b) => `<option value="${b}" ${k.base === b ? 'selected' : ''}>${KEYWORDS[b].emoji} ${KEYWORDS[b].name}</option>`).join('')}</select></label>
+        ${k.img ? '' : `<label class="kwm-hue">색 <input type="range" min="0" max="359" value="${k.hue}" data-kw="${i}.hue" data-num></label>`}
+        <label class="btn small">🖼 그림 올리기<input type="file" accept="image/*" data-kwimg="${i}" hidden></label>
+        <button class="btn small" data-kwdraw="${i}">✏ 직접 그리기</button>
+        ${k.img ? `<button class="btn small" data-kwnoimg="${i}">기본 아이콘</button>` : ''}
+        <span class="cost-tag">코스트 ${keywordCost(k)}</span>
+        <button class="btn small del" data-delkw="${i}">키워드 삭제</button>
+      </div>
+      <div class="muted small">${KEYWORDS[k.base].name}처럼 동작: ${KEYWORDS[k.base].desc}</div>
+      <div class="kwm-fx">${k.fx.map((e, j) => fxRow(e, `${i}.fx.${j}`, 'data-kw', '보유자', '상대')).join('') || '<span class="muted small">특수 효과 없음</span>'}</div>
+      ${k.fx.length < 3 ? `<button class="btn small" data-addfx="${i}">+ 발동 시 특수 효과</button>` : ''}
+    </div>`).join('') || '<p class="muted">아직 만든 키워드가 없습니다.</p>'}`;
+  $('#kwm-add').disabled = pk.keywords.length >= RULES.maxKeywords;
+}
+
+// ---- 키워드 아이콘 그리기 판 (96×96) ----
+const DRAW = { kw: null, color: '#ff3b5c', size: 8, erase: false, last: null };
+function openDrawPad(k) {
+  if (!k) return;
+  DRAW.kw = k;
+  const cv = $('#draw-canvas'), ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  if (k.img) { const im = new Image(); im.onload = () => ctx.drawImage(im, 0, 0, cv.width, cv.height); im.src = k.img; }
+  $('#draw-modal').classList.add('show');
+}
+function initDrawPad() {
+  const cv = $('#draw-canvas'), ctx = cv.getContext('2d');
+  const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * cv.width, y: ((e.clientY - r.top) / r.height) * cv.height }; };
+  const stroke = (a, b) => {
+    ctx.globalCompositeOperation = DRAW.erase ? 'destination-out' : 'source-over';
+    ctx.strokeStyle = DRAW.color; ctx.fillStyle = DRAW.color;
+    ctx.lineWidth = DRAW.size; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  };
+  cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); DRAW.last = pos(e); stroke(DRAW.last, { x: DRAW.last.x + 0.1, y: DRAW.last.y }); });
+  cv.addEventListener('pointermove', (e) => { if (!DRAW.last) return; const p = pos(e); stroke(DRAW.last, p); DRAW.last = p; });
+  const up = () => { DRAW.last = null; };
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+  $('#draw-color').oninput = (e) => { DRAW.color = e.target.value; DRAW.erase = false; $('#draw-erase').classList.remove('on'); };
+  $('#draw-size').oninput = (e) => { DRAW.size = +e.target.value; };
+  $('#draw-erase').onclick = (e) => { DRAW.erase = !DRAW.erase; e.target.classList.toggle('on', DRAW.erase); };
+  $('#draw-clear').onclick = () => ctx.clearRect(0, 0, cv.width, cv.height);
+  $('#draw-cancel').onclick = () => $('#draw-modal').classList.remove('show');
+  $('#draw-ok').onclick = () => {
+    if (DRAW.kw) DRAW.kw.img = cv.toDataURL('image/png');
+    $('#draw-modal').classList.remove('show');
+    renderKwm();
+  };
+}
+
+function initPackExtras() {
+  initDrawPad();
+  const sheetM = $('#sheet-modal'), kwM = $('#kw-modal');
+  const save = () => { commitPacks(); renderWorkshop(); };
+  $('#ws-sheet').onclick = () => { renderSheet(); sheetM.classList.add('show'); };
+  $('#ws-kw').onclick = () => { renderKwm(); kwM.classList.add('show'); };
+  $('#sheet-close').onclick = () => { save(); sheetM.classList.remove('show'); };
+  $('#kwm-close').onclick = () => { save(); kwM.classList.remove('show'); };
+  $('#sheet-reset').onclick = () => { edPack().sheet = defaultSheet(); renderSheet(); };
+
+  // 스탯
+  const body = $('#sheet-body');
+  const onSheet = (el, rerender) => {
+    const path = el.dataset.sh;
+    if (!path) return;
+    const sh = edPack().sheet;
+    setPath(sh, path, el.dataset.num !== undefined ? Number(el.value) : el.value);
+    if (/\.key$/.test(path)) fixFx(getPath(sh, path.replace(/\.key$/, '')));
+    edPack().sheet = normalizeSheet(sh);
+    if (rerender) renderSheet();
+  };
+  body.addEventListener('change', (e) => onSheet(e.target, true));
+  body.addEventListener('input', (e) => {
+    if (e.target.type !== 'range') return;
+    onSheet(e.target, false);
+    const row = e.target.closest('.sh-row');
+    if (row) $('.sh-val', row).textContent = e.target.value;
+    const sum = sheetSummary(edPack().sheet);
+    const box = $('.sh-sum', body);
+    box.classList.toggle('over', !sum.valid);
+    $('b', box).textContent = sum.points;
+  });
+  body.addEventListener('click', (e) => {
+    const sh = edPack().sheet;
+    if (e.target.dataset.add === 'passive' && sh.passives.length < RULES.maxPassives) sh.passives.push({ on: 'turnStart', e: newFx() });
+    else if (e.target.dataset.del) { const m = e.target.dataset.del.match(/^passives\.(\d+)/); if (m) sh.passives.splice(+m[1], 1); }
+    else return;
+    renderSheet();
+  });
+
+  // 나만의 키워드
+  const kb = $('#kwm-body');
+  const onKw = (el, rerender) => {
+    const path = el.dataset.kw;
+    if (!path) return;
+    const list = edPack().keywords;
+    setPath(list, path, el.dataset.num !== undefined ? Number(el.value) : el.value);
+    if (/\.key$/.test(path)) fixFx(getPath(list, path.replace(/\.key$/, '')));
+    edPack().keywords = list.map(normalizeKeyword).filter(Boolean);
+    if (rerender) renderKwm();
+  };
+  kb.addEventListener('change', async (e) => {
+    if (e.target.dataset.kwimg !== undefined) {
+      const f = e.target.files && e.target.files[0];
+      const k = edPack().keywords[+e.target.dataset.kwimg];
+      if (!f || !k) return;
+      try { k.img = await shrinkIcon(f); renderKwm(); } catch { toast('그림을 읽을 수 없습니다', 'bad'); }
+      return;
+    }
+    onKw(e.target, true);
+  });
+  kb.addEventListener('input', (e) => {
+    if (e.target.type === 'range') { onKw(e.target, false); const ic = e.target.closest('.kwm-box'); if (ic) $('.kwm-icon', ic).innerHTML = kwIconHTML(getPath(edPack().keywords, e.target.dataset.kw.replace(/\.hue$/, '')).base, +e.target.value); }
+    else if (e.target.dataset.kw && /\.name$/.test(e.target.dataset.kw)) onKw(e.target, false);
+  });
+  kb.addEventListener('click', (e) => {
+    const list = edPack().keywords;
+    const t = e.target.dataset;
+    if (t.kwdraw !== undefined) { openDrawPad(list[+t.kwdraw]); return; }
+    if (t.kwnoimg !== undefined) { list[+t.kwnoimg].img = ''; }
+    else if (t.addfx !== undefined) { const k = list[+t.addfx]; if (k && k.fx.length < 3) k.fx.push({ ...newFx(), key: 'sp', target: 'enemy', pot: -3 }); }
+    else if (t.delkw !== undefined) {
+      const k = list[+t.delkw];
+      if (!k || !confirm(`「${k.name}」 키워드를 지울까요? 이 키워드를 쓰는 카드 효과는 동작하지 않게 됩니다.`)) return;
+      list.splice(+t.delkw, 1);
+    } else if (t.del) { const m = t.del.match(/^(\d+)\.fx\.(\d+)$/); if (m) list[+m[1]].fx.splice(+m[2], 1); }
+    else return;
+    edPack().keywords = list.map(normalizeKeyword).filter(Boolean);
+    renderKwm();
+  });
+  $('#kwm-add').onclick = () => {
+    const pk = edPack();
+    if (pk.keywords.length >= RULES.maxKeywords) return;
+    pk.keywords.push(normalizeKeyword({ name: '새 키워드', base: 'bleed', hue: 200, fx: [] }));
+    renderKwm();
+  };
 }
 
 // 타이틀 / 멀티 로비의 팩 선택 상자 채우기

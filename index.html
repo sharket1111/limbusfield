@@ -19,8 +19,12 @@
   <link rel="stylesheet" href="css/arena.css">
   <link rel="stylesheet" href="css/frame.css">
   <link rel="stylesheet" href="css/card.css">
+  <link rel="stylesheet" href="css/field.css">
+  <link rel="stylesheet" href="css/keywords.css">
+  <link rel="stylesheet" href="css/hud.css">
 </head>
 <body>
+  <div id="rotate-lock"><div class="rl-icon">📱↻</div><b>가로 모드로 돌려 주세요</b><span>Anomaly Field는 휴대폰에서 가로 화면으로만 플레이할 수 있습니다.</span></div>
   <!-- 전투 시네마틱 (합 연출을 전체 화면으로) -->
   <div id="cine" class="cine" aria-hidden="true"></div>
 
@@ -72,6 +76,7 @@
         <button class="btn" id="btn-gallery">카드 도감</button>
         <button class="btn" id="btn-workshop">🛠 카드 공방</button>
         <button class="btn" id="btn-char">🎨 캐릭터 꾸미기</button>
+        <button class="btn" id="btn-kwicons">🔣 키워드 아이콘</button>
       </div>
       <div id="custom-info" class="muted small"></div>
       <div id="stats" class="muted"></div>
@@ -196,6 +201,8 @@
       <button class="btn small" id="ws-pack-new">+ 새 팩</button>
       <button class="btn small" id="ws-pack-rename">이름 바꾸기</button>
       <button class="btn small" id="ws-pack-del">팩 삭제</button>
+      <button class="btn small" id="ws-sheet">👤 캐릭터 스탯</button>
+      <button class="btn small" id="ws-kw">✴ 나만의 키워드</button>
       <button class="btn small" id="ws-export">⬇ 팩 내보내기</button>
       <label class="btn small">⬆ 팩 가져오기<input type="file" accept="application/json,.json" id="ws-import" hidden></label>
       <div id="ws-pack-info" class="small"></div>
@@ -221,37 +228,44 @@
 
   <!-- 게임 -->
   <section id="game" class="screen">
-    <header class="topbar">
+    <header class="topbar hud-top">
+      <div class="hud-turn"><small>TURN</small><b id="round">0</b></div>
+      <div class="hud-deck"><span id="deckcount"></span><span id="mode-tag"></span><span id="night-tag"></span></div>
+      <div class="spacer"></div>
       <div class="brand">ANOMALY FIELD</div>
-      <div id="round">TURN 0</div>
-      <div id="deckcount" class="muted"></div>
-      <div id="mode-tag" class="muted small"></div>
       <div class="spacer"></div>
       <select id="in-speed-game" title="속도">
         <option value="1.6">느림</option><option value="1" selected>보통</option><option value="0.5">빠름</option>
       </select>
       <button class="btn small" id="btn-cine" title="전투 연출 방식">🎬 전체 화면</button>
       <button class="btn theme-toggle" title="다크 / 라이트 모드">🌙</button>
+      <button class="btn small" id="btn-log" title="전투 기록">📜</button>
       <button class="btn small open-rules">규칙</button>
     </header>
 
-    <div id="opponents"></div>
-
     <div class="middle">
-      <div id="stage"></div>
+      <div id="field">
+        <div class="street" id="field-street"></div>
+        <div class="floor-plane"></div>
+        <div id="fighters"></div>
+        <svg id="arrows" aria-hidden="true"></svg>
+        <div id="field-hint"></div>
+        <div id="stage"></div>
+      </div>
       <div id="log"></div>
     </div>
 
-    <div class="bottom">
-      <div class="bottom-row">
+    <div class="bottom hud">
+      <div class="hud-row">
         <div id="me"></div>
-        <div class="controls">
+        <div class="hud-mid">
+          <div id="slots"></div>
           <div id="preview"></div>
-          <div class="btns">
-            <button class="btn primary" id="btn-act">상대 차례</button>
-            <button class="btn" id="btn-cancel">선택 취소</button>
-            <button class="btn pray" id="btn-pray">🙏 기도 (턴 종료)</button>
-          </div>
+        </div>
+        <div class="hud-gear">
+          <button class="gear-btn" id="btn-act" title="선택 확정"><svg class="gear-svg" viewBox="0 0 100 100" aria-hidden="true"><path class="gear-teeth" d="M97.8,45.7 L97.8,54.3 L89.4,56.8 L87.6,63.8 L93.6,70.2 L89.2,77.6 L80.7,75.6 L75.6,80.7 L77.6,89.2 L70.2,93.6 L63.8,87.6 L56.8,89.4 L54.3,97.8 L45.7,97.8 L43.2,89.4 L36.2,87.6 L29.8,93.6 L22.4,89.2 L24.4,80.7 L19.3,75.6 L10.8,77.6 L6.4,70.2 L12.4,63.8 L10.6,56.8 L2.2,54.3 L2.2,45.7 L10.6,43.2 L12.4,36.2 L6.4,29.8 L10.8,22.4 L19.3,24.4 L24.4,19.3 L22.4,10.8 L29.8,6.4 L36.2,12.4 L43.2,10.6 L45.7,2.2 L54.3,2.2 L56.8,10.6 L63.8,12.4 L70.2,6.4 L77.6,10.8 L75.6,19.3 L80.7,24.4 L89.2,22.4 L93.6,29.8 L87.6,36.2 L89.4,43.2 Z"/><circle class="gear-ring" cx="50" cy="50" r="33"/><circle class="gear-core" cx="50" cy="50" r="26"/></svg><span class="gear-label">START</span></button>
+          <div class="gear-cap" id="gear-cap"></div>
+          <div class="gear-sub"><button class="btn small" id="btn-cancel">✕ 취소</button><button class="btn small pray" id="btn-pray">🙏 기도</button></div>
         </div>
       </div>
       <div id="info"></div>
@@ -284,30 +298,36 @@
       <ul>
         <li>모든 플레이어는 <b>HP 100</b>, <b>정신력 0</b>, <b>흐트러짐 40</b>, <b>20안</b>, 카드 7장으로 시작합니다. HP가 0이 되면 탈락, 마지막 1명이 승리합니다.</li>
         <li>자기 턴이 시작되면 카드를 1장 뽑습니다. (손패 최대 10장)</li>
-        <li><b>무기</b>로 상대 1명을 공격합니다. <b>보조</b> 표시가 있는 무기는 다른 무기에 덧붙여 공격력을 합칠 수 있습니다. 공격하면 턴이 끝납니다.</li>
+        <li><b>무기</b>로 상대 1명을 공격합니다. 손패의 카드를 <b>무대 위 상대 캐릭터에게 끌어다 놓으면</b> 바로 사용됩니다 (카드를 누르고 상대를 눌러도 됨). <b>보조</b> 표시가 있는 무기는 다른 무기에 덧붙여 공격력을 합칠 수 있습니다. 공격하면 턴이 끝납니다.</li>
+        <li><b>공격 가중치</b> — 한 번에 맞는 사람 수입니다. 가중치 2 이상이면 고른 대상에 더해 나머지 상대 중 무작위로 (가중치 − 1)명을 함께 공격하고, 각자 따로 대응합니다. 카드 공방에서 무기·E.G.O마다 1~5로 정할 수 있습니다.</li>
+        <li><b>대상 화살표</b> — 카드를 끄는 중이면 <span style="color:#4aa8ff">파란색</span>, 대상을 지정하면 <span style="color:#ffd23f">노란색</span>, 적이 나를 공격해 오면 <span style="color:#ff3b30">빨간색</span> 화살표가 무대에 그려집니다.</li>
+        <li><b>화면</b> — 아래 왼쪽은 내 초상화(둘레에 HP·흐트러짐 원형 게이지, 위쪽에 보유 E.G.O 색 보석, 정신력 원)와 내성 정보, 가운데는 고른 스킬 칸(주 스킬 1개 + 보조 무기만 추가 가능) → 대상, 오른쪽은 <b>START 기어</b>입니다. 카드를 끌어다 적에게 놓거나 눌러서 고른 뒤 <b>기어를 눌러야 확정</b>됩니다. E.G.O를 쓰면 발현 연출(번개선 → 죄악 색 폭발 → 캐릭터 클로즈업과 E.G.O 이름)이 나온 뒤 죄악 색으로 물든 무대에서 공격합니다. 다른 플레이어의 손패 장수는 보이지 않습니다. 아래 HUD의 이름(✎)을 누르면 이름을 바꿀 수 있습니다. 보관한 E.G.O는 손패에 나오지 않고, 초상화를 <b>꾹 누르면</b>(PC는 오른쪽 클릭) 열리는 E.G.O 선택 화면에서만 고릅니다.</li>
+        <li><b>코인마다 한 번씩 때립니다</b> — 공격력은 코인 수만큼 나눠 각 타격에 실리고, 앞면이 나온 코인은 그 코인의 위력이 더해집니다. <b>전체 공격(광역)</b>은 <b>앞면이 나온 코인만 적중</b>하고 뒷면은 빗나갑니다.</li>
         <li><b>공격받았을 때의 대응</b> — 화면 아래 <b>손패에서 카드를 골라</b> 대응합니다 (쓸 수 있는 카드는 빛나고, 못 쓰는 카드는 흐려짐). 고른 카드에 따라 아래 중 하나로 정해집니다. 공격 위력 = 공격력 + 코인(기본 3개, 앞면당 +2).
           <ul>
             <li><b>⚔ 합</b>: 내 <b>무기</b>(+보조 무기)로 맞받아칩니다. 서로 <b>남은 코인을 다시 던져</b> 위력을 비교하고, 진 쪽은 <b>코인 1개가 깨집니다</b>. 이걸 반복해 <b>코인이 모두 깨진 쪽이 합에서 집니다</b>. 이긴 쪽은 <b>남은 코인</b>으로 공격해 (공격력 + 앞면 코인) 피해를 주고, 그 무기의 적중 효과가 발동합니다. 속성 제한 없음. 10합이 넘으면 상쇄.</li>
-            <li><b>🛡 가드</b>: 가드 카드를 <b>여러 장 동시에</b> 냅니다. 받는 피해 = 공격 위력 − 가드 위력(수비 위력 합계 + 코인). 관통 공격에는 쓸 수 없습니다.</li>
+            <li><b>🛡 가드</b>: 가드 카드를 <b>여러 장 동시에</b> 냅니다. 받는 피해 = 공격 위력 − 가드 위력(수비 위력 합계 + 코인). 방어 무시 공격에는 쓸 수 없습니다.</li>
             <li><b>💨 회피</b>: 회피 카드 1장. 회피 위력 ≥ 공격 위력이면 <b>피해 0</b>(정신력 +5), 아니면 공격을 그대로 다 받습니다.</li>
             <li><b>↩ 반격</b>: 반격 카드 1장. 반격 위력 ≥ 공격 위력이면 공격을 막고 <b>반격 위력만큼 되받아칩니다</b>. 아니면 그대로 다 받습니다.</li>
-            <li>가드·회피·반격 카드는 공격과 <b>같은 속성</b> 또는 <b>전속성</b>일 때만 쓸 수 있습니다.</li>
+            <li>가드·회피·반격·합은 <b>공격 유형이나 속성과 상관없이</b> 언제든 쓸 수 있습니다.</li>
           </ul></li>
-        <li>속성: ⚔물리 · 🔥화염 · ❄냉기 · ✦광휘 · ☾그림자</li>
+        <li><b>공격 유형</b>: 🗡참격 · ➶관통 · 🔨타격 — 무기·E.G.O마다 정해져 있고(카드 아래 배지), 맞는 사람의 <b>내성</b>에 따라 피해가 달라집니다 (내성 ×0.5 · 견딤 ×0.75 · 보통 ×1 · 약점 ×1.5 · 치명 ×2). 무대에서 캐릭터 위에 마우스를 올리면 내성이 보입니다. 속성(⚔물리 · 🔥화염 · ❄냉기 · ✦광휘 · ☾그림자)은 카드 색과 아이콘만 정합니다.</li>
+        <li><b>👤 캐릭터 스탯</b> — 카드팩마다 체력·시작 정신력·흐트러짐 상한·참격/관통/타격 내성·패시브를 정합니다. 기본값에서 올리면 스탯 포인트를 쓰고 내리면 돌려받으며, 합계가 <b>10포인트 이하</b>여야 대전에 쓸 수 있습니다. 패시브는 턴 시작 시 / 공격 적중 시 / 피격 시 / 합 승리 시 / 적 처치 시 자동으로 발동합니다.</li>
+        <li><b>✴ 나만의 키워드</b> — 카드팩마다 최대 4개. 화상·출혈·진동·파열·침잠·호흡 중 하나를 바탕으로 이름과 색을 바꾸고, <b>발동할 때마다 함께 나가는 특수 효과</b>를 넣습니다. 아이콘은 그림을 올리거나 직접 그릴 수 있습니다. 만드는 코스트(4 + 특수 효과 가치)가 팩 코스트에 더해집니다. 카드 효과 「나만의 키워드 부여」와 패시브에서 쓸 수 있습니다.</li>
         <li><b>💢 흐트러짐</b> — 피격 피해만큼 흐트러짐 게이지(40)가 줄고, 0이 되면 <b>흐트러짐</b>: 다음 턴을 쉬고, 그동안 <b>합·가드·회피·반격을 할 수 없으며 받는 피해가 1.5배</b>가 됩니다.
           쉬는 턴이 끝나면 게이지가 가득 찹니다. 자기 턴이 올 때마다 게이지 +5. 〰진동 폭발과 「흐트러짐 피해」 효과로도 깎입니다.</li>
         <li><b>정신력(SP)</b> — -45 ~ +45. <b>코인 앞면 확률 = 50% + 정신력%</b> (최소 5%, 최대 95%).
-          적중 +5, 합 승리 +5, 처치 +15, 기도 +10 / 피격 시 피해의 절반만큼 감소, 합 패배 -5, 누군가 쓰러지면 -5.
+          적중 +5, 합 승리 +5, 처치 +15 / 피격 시 피해의 절반만큼 감소, 합 패배 -5, 누군가 쓰러지면 -5.
           <b>-45가 되면 공황</b>: 다음 턴을 쉬고 정신력이 0으로 돌아옵니다.</li>
-        <li><b>E.G.O</b>는 <b>정신력을 소모</b>합니다 (정신력이 -45 아래로 떨어지면 사용 불가). 공격·강탈·기절은 턴을 끝내고, 회복·정화는 턴을 끝내지 않습니다.</li>
-        <li><b>도구</b>는 턴을 끝내지 않고 자유롭게 쓸 수 있습니다 (상대를 대상으로 하는 도구는 턴 종료).</li>
+        <li><b>E.G.O</b>는 <b>정신력을 소모</b>합니다 (정신력이 -45 아래로 떨어지면 사용 불가). 어떤 E.G.O를 쓰든 턴이 끝납니다. <b>한 번 얻은 E.G.O는 써도 사라지지 않고 계속 쓸 수 있으며</b>, 손패와 따로 <b>최대 5개</b>까지 보관합니다 (가득 차면 새로 얻은 E.G.O는 버려짐). 카드 공방에서 만든 E.G.O는 카드 코스트 × 5만큼(최대 60) 정신력을 쓰고, <b>E.G.O 연출</b>(무기·복장·대사·배경)을 정할 수 있습니다.</li>
+        <li><b>어떤 행동을 하든 턴이 바로 끝납니다</b> — 공격, E.G.O, 도구, 매입·강매·환전, 기도 모두 한 번 하면 다음 사람 차례입니다.</li>
         <li><b>돈(안)</b> — 모든 카드에는 <b>가격</b>이 있고(E.G.O는 0안), 돈은 <b>거래 카드</b>로 사고팔 때 씁니다. 최대 99안.
           <ul>
             <li><b>🛒 매입</b>: 상대 손패에서 무작위로 1장이 공개되고, 살지 말지 고릅니다. 사면 그 가격을 상대에게 내고 가져옵니다. (턴 종료)</li>
             <li><b>💸 강매</b>: 내 카드 1장을 골라 상대에게 강제로 팝니다. 상대는 돈으로 내고, 돈이 모자라면 <b>정신력(0까지) → HP</b> 순으로 냅니다. (턴 종료)</li>
-            <li><b>💱 환전</b>: HP·정신력·돈을 1:1로 자유롭게 다시 나눕니다. 합계는 그대로. 정신력은 0 아래로 내릴 수 없습니다. (턴 유지)</li>
+            <li><b>💱 환전</b>: HP·정신력·돈을 1:1로 자유롭게 다시 나눕니다. 합계는 그대로. 정신력은 0 아래로 내릴 수 없습니다. (턴 종료)</li>
           </ul></li>
-        <li>할 게 없으면 <b>기도</b>: 카드 1장 + 정신력 10을 얻고 턴을 마칩니다. 손패가 가득 차 있으면 가장 쓸모없는 카드 1장을 버리고 뽑습니다.</li>
+        <li>할 게 없으면 <b>기도</b>: 카드 1장을 얻고 턴을 마칩니다. 손패가 가득 차 있으면 가장 쓸모없는 카드 1장을 버리고 뽑습니다.</li>
         <li><b>키워드</b> — 대부분 <b>위력/횟수</b>를 가집니다. 다시 부여하면 위력과 횟수가 각각 더해지고, 횟수가 0이 되면 사라집니다.
           <ul>
             <li>🔥 <b>화상</b>: 턴 시작 시 위력만큼 피해, 횟수 -1</li>
@@ -339,6 +359,55 @@
   </div>
 
   <!-- 도감 -->
+  <div id="egocine" class="egocine"></div>
+
+  <div id="egopick" class="modal">
+    <div class="egopick-panel">
+      <div class="ep-head"><b>E.G.O</b><span class="muted small">보유한 E.G.O — 써도 사라지지 않습니다</span><button class="btn small" id="egopick-close">닫기</button></div>
+      <div id="egopick-list"></div>
+      <div id="egopick-foot"></div>
+    </div>
+  </div>
+
+  <div id="sheet-modal" class="modal">
+    <div class="panel sheet-panel">
+      <h2>👤 캐릭터 스탯 <small id="sheet-pack" class="muted"></small></h2>
+      <div id="sheet-body"></div>
+      <div class="kwicons-btns"><button class="btn" id="sheet-reset">기본값으로</button><button class="btn primary" id="sheet-close">저장하고 닫기</button></div>
+    </div>
+  </div>
+
+  <div id="kw-modal" class="modal">
+    <div class="panel kwm-panel">
+      <h2>✴ 나만의 키워드</h2>
+      <div id="kwm-body"></div>
+      <div class="kwicons-btns"><button class="btn" id="kwm-add">+ 키워드 만들기</button><button class="btn primary" id="kwm-close">저장하고 닫기</button></div>
+    </div>
+  </div>
+
+  <div id="draw-modal" class="modal">
+    <div class="panel draw-panel">
+      <h2>✏ 키워드 아이콘 그리기</h2>
+      <canvas id="draw-canvas" width="96" height="96"></canvas>
+      <div class="draw-tools">
+        <label>색 <input type="color" id="draw-color" value="#ff3b5c"></label>
+        <label>굵기 <input type="range" id="draw-size" min="2" max="24" value="8"></label>
+        <button class="btn small" id="draw-erase">지우개</button>
+        <button class="btn small" id="draw-clear">전부 지우기</button>
+      </div>
+      <div class="kwicons-btns"><button class="btn" id="draw-cancel">취소</button><button class="btn primary" id="draw-ok">이 그림 쓰기</button></div>
+    </div>
+  </div>
+
+  <div id="kwicons" class="modal">
+    <div class="panel kwicons">
+      <h2>키워드 아이콘</h2>
+      <p class="muted small">기본 아이콘 대신 쓸 그림을 키워드마다 고를 수 있습니다. 고른 그림은 <b>이 브라우저에만</b> 저장되고, 다른 사람에게는 보내지 않습니다.</p>
+      <div id="kwicons-list"></div>
+      <div class="kwicons-btns"><button class="btn" id="kwicons-reset">모두 기본으로</button><button class="btn primary" id="kwicons-close">닫기</button></div>
+    </div>
+  </div>
+
   <div id="gallery" class="modal">
     <div class="panel gallery">
       <h2>카드 도감</h2>
@@ -352,6 +421,7 @@
   <script src="js/data.js"></script>
   <script src="js/keywords.js"></script>
   <script src="js/cost.js"></script>
+  <script src="js/sheet.js"></script>
   <script src="js/game.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/ai.js"></script>

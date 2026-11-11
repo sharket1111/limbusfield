@@ -35,6 +35,14 @@ function effectValue(e) {
       case 'pwrLowHp': v = pot * 0.2; break;
       case 'reuse': v = Math.max(1, cnt) * 1.2; break;
       case 'kwBurst': v = toEnemy ? 4 : -4; break;
+      case 'customKw': {
+        const ck = KEYWORDS[e.kw];
+        const base = ck && ck.base ? ck.base : 'burn';
+        const extra = ck && ck.fx ? ck.fx.reduce((s, x) => s + Math.abs(effectValue({ ...x, when: 'use' })), 0) : 0;
+        v = Math.min(36, pot * Math.max(1, cnt) * (KW_WEIGHT[base] || 0.4) + Math.max(1, cnt) * extra * 0.5);
+        v = (ck ? ck.debuff : true) === toEnemy ? v : -v;
+        break;
+      }
       case 'breakArmor': v = toEnemy ? 6 : -6; break;
       case 'stealWon': v = toEnemy ? pot * 0.4 : 0; break;
       default: v = 0;
@@ -60,6 +68,7 @@ function cardValue(c) {
     if (fx.includes('holy')) v += 2;
     if (fx.includes('twice')) v *= 1.6;
     if (fx.includes('all')) v *= 1.6;
+    else if (c.weight > 1) v *= 1 + 0.3 * (c.weight - 1);
     if (c.plus) v += 1.5;
   } else if (c.type === 'armor') {
     const extra = Array.isArray(c.coins) ? coinValue(c.coins) : 0;
@@ -70,9 +79,10 @@ function cardValue(c) {
     if (fx.includes('nullify')) v += 15;
   } else if (c.type === 'ego') {
     if (c.kind === 'attack') {
-      v = c.power + coins + eff - (c.cost || 0) * 0.25;
+      v = c.power + coins + eff;
       if (fx.includes('pierce')) v += 4;
       if (fx.includes('all')) v *= 1.6;
+      else if (c.weight > 1) v *= 1 + 0.3 * (c.weight - 1);
     } else {
       v = { heal: (c.power || 0) * 0.7, cure: 4, steal: 8, stun: 10 }[c.kind] || 5;
       v -= (c.cost || 0) * 0.15;
@@ -86,14 +96,20 @@ function cardValue(c) {
   return v;
 }
 
+// 직접 만든 E.G.O의 정신력 소모: 카드 코스트 × 5 (5 ~ 60)
+const egoSpCost = (c) => Math.max(5, Math.min(60, cardCost(c) * 5));
+
 function cardCost(c) {
   return Math.max(1, Math.min(12, Math.round(cardValue(c) / 3)));
 }
 
 // 팩 요약: 총 코스트, 장수, 대전 가능 여부
-function packSummary(cards) {
+// keywords: 팩의 나만의 키워드 — 만드는 데 드는 코스트도 팩 코스트에 포함
+function packSummary(cards, keywords = []) {
   const list = cards || [];
-  const cost = list.reduce((s, c) => s + cardCost(c) * (c.count || 1), 0);
+  if (keywords.length) previewKeywords(keywords);
+  const kwCost = keywords.reduce((s, k) => s + keywordCost(k), 0);
+  const cost = list.reduce((s, c) => s + cardCost(c) * (c.count || 1), 0) + kwCost;
   const count = list.reduce((s, c) => s + (c.count || 1), 0);
   const overBudget = cost > RULES.packBudget;
   const tooSmall = count < RULES.packMin;

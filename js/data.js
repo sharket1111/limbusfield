@@ -59,12 +59,12 @@ const CARDS = [
     flavor: '“당신의 장점을 말해 보세요.”' },
   { id: 'w_clock',    type: 'weapon', name: '멈춘 시계탑의 바늘', attr: 'phys',   atk: 16, count: 2, price: 10, rarity: 2, effects: [{ when: 'hit', target: 'enemy', key: 'rupture', pot: 2, cnt: 2 }],
     flavor: '정오에서 영원히 멈춘 시침.' },
-  { id: 'w_censer',   type: 'weapon', name: '순례자의 향로',      attr: 'light',  atk: 12, count: 2, price: 8, rarity: 2, fx: ['holy'],
+  { id: 'w_censer',   type: 'weapon', name: '순례자의 향로',      attr: 'light',  atk: 12, count: 2, price: 8, rarity: 2, fx: ['holy'], weight: 2,
     flavor: '흔들 때마다 뒷골목에 성가가 울린다.' },
   { id: 'w_saw',      type: 'weapon', name: '반복 재생 톱날',     attr: 'phys',   atk: 6,  count: 2, price: 6, rarity: 2, fx: ['twice'],
     coins: [{ power: 2, fx: [{ when: 'heads', target: 'enemy', key: 'rupture', pot: 1, cnt: 1 }] }, { power: 2, fx: [{ when: 'heads', target: 'enemy', key: 'rupture', pot: 1, cnt: 1 }] }, { power: 2, fx: [{ when: 'heads', target: 'enemy', key: 'rupture', pot: 1, cnt: 1 }] }],
     flavor: '같은 장면을, 같은 상처를, 몇 번이고.' },
-  { id: 'w_scythe',   type: 'weapon', name: '연체 이자의 낫',     attr: 'shadow', atk: 14, count: 2, price: 10, rarity: 2, fx: ['lifesteal'], effects: [{ when: 'hit', target: 'enemy', key: 'sinking', pot: 3, cnt: 2 }],
+  { id: 'w_scythe',   type: 'weapon', name: '연체 이자의 낫',     attr: 'shadow', atk: 14, count: 2, price: 10, rarity: 2, fx: ['lifesteal'], weight: 2, effects: [{ when: 'hit', target: 'enemy', key: 'sinking', pot: 3, cnt: 2 }],
     flavor: '빌린 것은 반드시 피로 돌려받는다.' },
   { id: 'w_shredder', type: 'weapon', name: '폐기물 분쇄기',      attr: 'phys',   atk: 8,  count: 2, price: 8, rarity: 2, fx: ['all'],
     flavor: '구역 전체를 대상으로 하는 정리 해고.' },
@@ -204,6 +204,7 @@ const RULES = {
   maxHp: 100,
   startHand: 7,
   maxHand: 10,
+  maxEgo: 5,          // 한 번 얻은 E.G.O는 계속 쓸 수 있음 — 최대 보관 수 (손패 장수와 따로 셈)
   drawPerTurn: 1,
   // 정신력
   minSp: -45,
@@ -222,6 +223,9 @@ const RULES = {
   staggerRegen: 5,   // 자기 턴 시작 시 회복량
   staggerMult: 1.5,  // 흐트러짐 상태에서 받는 피해 배율
   clashMaxRounds: 10, // 합 최대 횟수 (넘으면 상쇄)
+  statBudget: 10,     // 캐릭터 스탯 포인트 상한
+  maxPassives: 3,     // 패시브 최대 개수
+  maxKeywords: 4,     // 팩마다 나만의 키워드 최대 개수
   // 카드팩 / 코스트
   packBudget: 150,   // 팩 코스트 상한 (카드 코스트 × 장수의 합)
   packMin: 20,       // 개인 덱으로 쓰려면 필요한 최소 장수

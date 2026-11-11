@@ -1,0 +1,196 @@
+/* ============================================================
+   전투 무대(메인 화면): 모든 플레이어가 캐릭터로 서 있고 카드를 끌어다 놓아 공격
+   ============================================================ */
+.middle { grid-template-columns: 1fr 280px; min-height: 0; }
+#field { position: relative; height: clamp(300px, 46vh, 470px); overflow: hidden; background: #0b0a0e; --spd: 1; color: #f4efe6;
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut)); }
+#field::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  background: linear-gradient(180deg, transparent 55%, rgba(0, 0, 0, .55)); }
+#field.aiming::after { background: linear-gradient(180deg, transparent 55%, rgba(0, 0, 0, .55)), radial-gradient(ellipse at 70% 60%, rgba(224, 67, 59, .16), transparent 65%); }
+#field .street { z-index: 0; }
+#fighters { position: absolute; inset: 0; z-index: 2; }
+#log { max-height: clamp(300px, 46vh, 470px); }
+
+/* 캐릭터 */
+.pf { position: absolute; width: calc(112px * var(--s, 1)); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center;
+  transition: left .35s ease, bottom .35s ease, filter .2s, opacity .3s; user-select: none; -webkit-user-select: none; }
+.pf .f-body { width: 100%; }
+.pf .f-foot { margin-top: 9%; }
+.pf .ff-hpn { font-size: clamp(15px, 1.6vw, 22px); }
+.pf .ff-name { font-size: 11px; }
+.ff-extra { font-size: 10.5px; color: #d8d0de; text-shadow: 0 1px 2px #000; white-space: nowrap; }
+.ff-extra .won { color: #ffd76a; }
+.ff-extra .ctrl { font-style: normal; margin-right: 3px; }
+.pf-turn { position: absolute; top: -22px; left: 50%; transform: translateX(-50%); color: #ffd23f; font-size: 18px; text-shadow: 0 0 8px #ffb02e; display: none; z-index: 3; }
+.pf.active .pf-turn { display: block; animation: turnbob .8s ease-in-out infinite alternate; }
+@keyframes turnbob { to { transform: translate(-50%, 6px); } }
+.pf-aim { position: absolute; top: 28%; left: 50%; transform: translate(-50%, -50%) scale(.6); font-size: 34px; opacity: 0; z-index: 4; pointer-events: none;
+  transition: opacity .15s, transform .15s; filter: drop-shadow(0 0 6px #ff3b30); }
+.pf.targeted .pf-aim, .pf.drop-over .pf-aim { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.pf.targetable { cursor: pointer; }
+.pf.targetable .f-fig { animation: aimpulse 1s ease-in-out infinite alternate; }
+@keyframes aimpulse { from { filter: drop-shadow(0 0 0 rgba(255, 59, 48, 0)); } to { filter: drop-shadow(0 0 10px rgba(255, 59, 48, .85)); } }
+.pf.drop-over { filter: brightness(1.15); }
+.pf.drop-over .f-fig { animation: none; filter: drop-shadow(0 0 14px #ff3b30) drop-shadow(0 0 4px #fff); }
+.pf.attacking .f-fig { filter: drop-shadow(0 0 10px #ff6a3d); }
+.pf.defending .ff-base { animation: alarmbase .6s ease-in-out infinite alternate; }
+@keyframes alarmbase { to { box-shadow: 0 0 22px 6px rgba(255, 59, 48, .7); } }
+.pf.dead { opacity: .35; filter: grayscale(1); }
+.pf.dead .f-body { animation: none; transform: rotate(-82deg) translate(-30%, 10%); transform-origin: 50% 90%; }
+.pf.dead .f-body.flip { transform: scaleX(-1) rotate(-82deg) translate(-30%, 10%); }
+.pf.hit .f-body svg { animation: hitflash .3s ease-out; }
+
+/* 카드 사용 알림: 무대 위쪽 가운데에 잠깐 떴다 사라짐 */
+#field #stage { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); z-index: 6; min-height: 0; padding: 8px 14px; gap: 6px;
+  background: rgba(10, 8, 14, .78); border: 0; clip-path: none; pointer-events: none; max-width: 92%; }
+#field #stage:empty { display: none; }
+#field #stage.pop:not(:has(.arena)) { animation: stageflash 3s ease-out forwards; }
+@keyframes stageflash { 0% { opacity: 0; transform: translateX(-50%) scale(.92); } 8% { opacity: 1; transform: translateX(-50%) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; } }
+#field #stage .stage-head, #field #stage .stage-extra { font-size: 13px; color: #f4efe6; }
+#field #stage .stage-idle { font-size: 15px; color: #e8e2ee; }
+#field #stage .card.big { width: 96px; height: 146px; }
+#field #stage .card.big .c-art-wrap { height: 96px; }
+#field #stage .card.big .c-stat { font-size: 26px; }
+#field #stage .card.big .c-name { font-size: 10px; }
+#field #stage:has(.arena) { left: 0; top: 0; width: 100%; height: 100%; max-width: none; transform: none; padding: 0; background: #000; pointer-events: auto; z-index: 7; animation: none; }
+#field #stage .arena { height: 100%; }
+
+#field-hint { position: absolute; right: 12px; bottom: 6px; z-index: 3; font-size: 11px; color: #d8d0dea0; pointer-events: none; text-shadow: 0 1px 2px #000; }
+
+/* 끌어다 놓기 */
+#hand .card { touch-action: pan-x; }
+#hand .card.dragging { opacity: .3; }
+.drag-ghost { position: fixed; left: 0; top: 0; z-index: 200; pointer-events: none; opacity: .93; margin: 0;
+  filter: drop-shadow(0 10px 14px rgba(0, 0, 0, .6)); transition: filter .12s; }
+.drag-ghost.can-drop { filter: drop-shadow(0 0 12px #ff3b30) drop-shadow(0 10px 14px rgba(0, 0, 0, .6)); }
+body:has(.drag-ghost) { cursor: grabbing; }
+
+/* 아래쪽 내 정보 띠 */
+.bottom-row { grid-template-columns: 220px 1fr; }
+.me-card .opp-av .char-svg { width: 40px; height: 40px; }
+.me-turn { font-size: 12px; color: var(--gold); margin-top: 2px; }
+.me-card.under-attack .me-turn { color: var(--red); font-weight: 700; }
+
+/* 라이트 테마에서도 무대는 어둡게 (배경이 밤거리) */
+html[data-theme="light"] #field #stage .stage-head, html[data-theme="light"] #field #stage .stage-extra { color: #f4efe6; }
+
+@media (max-width: 760px) {
+  .middle { grid-template-columns: 1fr; }
+  #log { display: none; }
+  .pf { width: calc(84px * var(--s, 1)); }
+}
+
+/* 전투 기록 열기 (좁은 화면) */
+body.log-open #log { display: block; position: fixed; right: 8px; top: 52px; bottom: 8px; width: min(340px, 80vw); max-height: none; z-index: 60; box-shadow: 0 0 0 1px var(--line), 0 10px 40px rgba(0, 0, 0, .6); }
+
+/* ---------- 휴대폰 가로 화면 (키가 낮은 화면) ---------- */
+@media (max-height: 520px) {
+  #game { padding: 0 8px 6px; }
+  .topbar { padding: 4px 0; gap: 8px; flex-wrap: nowrap; }
+  .topbar .brand { font-size: 13px; }
+  .topbar #deckcount, .topbar #mode-tag { display: none; }
+  .topbar .btn, .topbar select { padding: 2px 8px; font-size: 12px; }
+  .middle { grid-template-columns: 1fr; gap: 0; }
+  #log { display: none; }
+  #field { height: calc(100vh - 186px); min-height: 130px; }
+  #field-hint { display: none; }
+  #toasts { top: 6px; }
+  .toast { padding: 3px 10px; font-size: 11px; }
+  #me { display: none; }
+  .bottom::before { display: none; }
+  .pf { width: calc(68px * var(--s, 1)); }
+  .pf .ff-hpn { font-size: 13px; }
+  .pf .ff-sp { min-width: 16px; height: 16px; border-width: 1.5px; }
+  .pf .ff-sp b { font-size: 8px; }
+  .pf .f-status, .pf .ff-name { display: none; }
+  .ff-extra { font-size: 9px; }
+  .pf-turn { top: -16px; font-size: 13px; }
+  .bottom { margin-top: 4px; padding: 4px 8px; }
+  .bottom-row { grid-template-columns: 1fr; gap: 4px; }
+  .me-card { padding: 4px 6px; gap: 6px; }
+  .me-card .opp-av { display: none; }
+  .me-card .opp-name { font-size: 12px; margin: 0; }
+  .me-card .opp-hand, .me-turn { font-size: 10px; }
+  .controls { flex-direction: row; align-items: center; gap: 6px; }
+  #preview { flex: 1; font-size: 11px; line-height: 1.25; max-height: 42px; overflow: hidden; }
+  .btns { flex-wrap: nowrap; gap: 4px; }
+  .btns .btn { padding: 4px 8px; font-size: 12px; white-space: nowrap; }
+  #info { display: none; }
+  #hand { min-height: 0; padding: 7px 2px 0; gap: 4px; }
+  #hand .card { width: 70px; height: 108px; }
+  #hand .c-art-wrap { height: 70px; }
+  #hand .c-stat { font-size: 19px; bottom: 11px; }
+  #hand .c-glyph { font-size: 26px; }
+  #hand .c-name { font-size: 8.5px; padding: 2px 10px 2px 5px; }
+  #hand .c-sub, #hand .c-kw { font-size: 7.5px; }
+  #hand .c-coinrow, #hand .c-price { display: none; }
+  #hand .card { height: 96px; }
+  #hand .card:hover { transform: none; }
+  #hand .card.sel-main, #hand .card.sel-def { transform: translateY(-6px) !important; }
+  #hand .c-badge { width: 20px; height: 20px; }
+  #hand .c-badge span { font-size: 10px; }
+  #hand .c-sin { width: 14px; height: 14px; font-size: 7px; }
+  #field #stage .card.big { width: 70px; height: 108px; }
+  #field #stage .card.big .c-art-wrap { height: 70px; }
+  .def-banner { padding: 2px 6px; }
+  .def-banner b.big { font-size: 12px; }
+}
+
+/* ---------- 휴대폰 세로 화면: 가로로 돌려 달라는 안내 ---------- */
+#rotate-lock { display: none; }
+@media (orientation: portrait) and (pointer: coarse) and (max-width: 900px) {
+  #rotate-lock { display: flex; position: fixed; inset: 0; z-index: 9999; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    padding: 24px; text-align: center; background: #0b0a0e; color: #f4efe6; }
+  #rotate-lock .rl-icon { font-size: 54px; animation: rlturn 1.6s ease-in-out infinite; }
+  #rotate-lock b { font-size: 20px; color: #ffd23f; }
+  #rotate-lock span { font-size: 14px; color: #cfc8d6; }
+  body > :not(#rotate-lock) { visibility: hidden; }
+}
+@keyframes rlturn { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(90deg); } }
+.pf.hit { animation: none; }
+
+/* 무대 안 합 연출 (무대가 커졌으니 캐릭터·띠도 조금 크게) */
+#field .arena:not(.big) .fighter { width: 150px; bottom: 5%; }
+#field .arena:not(.big) .f-fig .f-body { width: 124px; }
+#field .arena:not(.big) .fighter.dash.left { left: calc(86% - 300px); }
+#field .arena:not(.big) .ff-hpn { font-size: 20px; }
+#field .arena:not(.big) .ff-name { font-size: 11px; }
+#field .arena:not(.big) .f-skill .sk-name { font-size: 13px; max-width: 230px; padding: 3px 16px 3px 12px; }
+#field .arena:not(.big) .f-skill .sk-badge { width: 42px; }
+#field .arena:not(.big) .f-skill .sk-pow { font-size: 20px; }
+#field .arena:not(.big) .f-skill .sk-pips i { width: 10px; height: 10px; }
+#field .arena:not(.big) .clash-banner { top: 13%; }
+#field .arena:not(.big) .total b { font-size: 46px; }
+@media (max-height: 520px) {
+  #field .arena:not(.big) .fighter { width: 92px; bottom: 3%; }
+  #field .arena:not(.big) .f-fig .f-body { width: 64px; }
+  #field .arena:not(.big) .fighter.dash.left { left: calc(86% - 184px); }
+  #field .arena:not(.big) .f-foot .f-status, #field .arena:not(.big) .ff-name { display: none; }
+  #field .arena:not(.big) .f-skill .sk-name { font-size: 9px; max-width: 120px; }
+  #field .arena:not(.big) .f-skill .sk-badge { width: 28px; }
+  #field .arena:not(.big) .f-skill .sk-pow { font-size: 13px; }
+  #field .arena:not(.big) .total b { font-size: 28px; }
+  #field .arena:not(.big) .clash-banner { top: 6%; font-size: 18px; }
+}
+
+/* ---------- 바닥: 캐릭터가 모두 땅을 딛고 서 있게 ---------- */
+#field .floor-plane { position: absolute; left: 0; right: 0; bottom: 0; height: 47%; z-index: 1; pointer-events: none; overflow: hidden;
+  background: linear-gradient(180deg, transparent 0, color-mix(in srgb, var(--ground-far) 85%, transparent) 9%, var(--ground-far) 30%, var(--ground-near) 100%); }
+#field .floor-plane::before { content: ''; position: absolute; left: -40%; right: -40%; top: 8%; bottom: -30%; transform: perspective(240px) rotateX(58deg); transform-origin: 50% 0;
+  background: repeating-linear-gradient(90deg, transparent 0 78px, var(--lane) 78px 80px), repeating-linear-gradient(180deg, transparent 0 46px, var(--lane) 46px 47px); opacity: .55; }
+#field .floor-plane::after { content: ''; position: absolute; left: 0; right: 0; top: 8%; height: 2px; background: linear-gradient(90deg, transparent, var(--lane), transparent); }
+#field::after { z-index: 1; }
+.pf .ff-base { width: 92%; bottom: -2%; }
+.pf .f-fig::after { content: ''; position: absolute; left: 50%; bottom: 1%; width: 70%; height: 9%; transform: translateX(-50%); border-radius: 50%; z-index: 0;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, .65), transparent 70%); }
+
+/* ---------- 대상 화살표 ---------- */
+#arrows { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 5; pointer-events: none; overflow: visible; }
+#arrows .arw { fill: none; stroke-width: 4; stroke-linecap: round; stroke-dasharray: 14 9; animation: arwflow .5s linear infinite; }
+@keyframes arwflow { to { stroke-dashoffset: -23; } }
+#arrows .arw.blue { stroke: #4aa8ff; filter: drop-shadow(0 0 5px #4aa8ff); }
+#arrows .arw.yellow { stroke: #ffd23f; filter: drop-shadow(0 0 5px #ffb02e); }
+#arrows .arw.red { stroke: #ff3b30; filter: drop-shadow(0 0 6px #ff3b30); stroke-width: 5; }
+#arrows .ah.blue { fill: #4aa8ff; } #arrows .ah.yellow { fill: #ffd23f; } #arrows .ah.red { fill: #ff3b30; }
+@media (max-height: 520px) { #arrows .arw { stroke-width: 3; } #arrows .arw.red { stroke-width: 3.5; } }
+@media (max-height: 520px) { .pf-aim { font-size: 22px; } }

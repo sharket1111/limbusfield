@@ -6,13 +6,13 @@
 'use strict';
 
 const KEYWORDS = {
-  burn:    { name: '화상', icon: '🔥', debuff: true,  desc: '턴 시작 시 위력만큼 피해를 받고 횟수 -1' },
-  bleed:   { name: '출혈', icon: '🩸', debuff: true,  desc: '공격할 때마다 위력만큼 피해를 받고 횟수 -1' },
-  tremor:  { name: '진동', icon: '〰', debuff: true,  desc: '「진동 폭발」을 당하면 위력만큼 흐트러짐 피해. 턴 종료 시 횟수 -1' },
-  rupture: { name: '파열', icon: '💥', debuff: true,  desc: '피격될 때마다 위력만큼 추가 피해를 받고 횟수 -1' },
-  sinking: { name: '침잠', icon: '🌊', debuff: true,  desc: '피격될 때마다 위력만큼 정신력 감소(정신력이 최저면 대신 그만큼 피해), 횟수 -1' },
-  poise:   { name: '호흡', icon: '🌬', debuff: false, desc: '공격 적중 시 위력×5% 확률로 치명타(피해 1.2배), 치명타가 나면 횟수 -1. 턴 종료 시 횟수 -1' },
-  charge:  { name: '충전', icon: '⚡', debuff: false, countOnly: true, max: 20, desc: '충전량(최대 20). 「충전 소모」 효과에 쓰입니다. 턴 종료 시 -1' },
+  burn:    { name: '화상', icon: '<i class="kwi kw-burn"></i>', emoji: '🔥', debuff: true,  desc: '턴 시작 시 위력만큼 피해를 받고 횟수 -1' },
+  bleed:   { name: '출혈', icon: '<i class="kwi kw-bleed"></i>', emoji: '🩸', debuff: true,  desc: '공격할 때마다 위력만큼 피해를 받고 횟수 -1' },
+  tremor:  { name: '진동', icon: '<i class="kwi kw-tremor"></i>', emoji: '〰', debuff: true,  desc: '「진동 폭발」을 당하면 위력만큼 흐트러짐 피해. 턴 종료 시 횟수 -1' },
+  rupture: { name: '파열', icon: '<i class="kwi kw-rupture"></i>', emoji: '💥', debuff: true,  desc: '피격될 때마다 위력만큼 추가 피해를 받고 횟수 -1' },
+  sinking: { name: '침잠', icon: '<i class="kwi kw-sinking"></i>', emoji: '🌊', debuff: true,  desc: '피격될 때마다 위력만큼 정신력 감소(정신력이 최저면 대신 그만큼 피해), 횟수 -1' },
+  poise:   { name: '호흡', icon: '<i class="kwi kw-poise"></i>', emoji: '🌬', debuff: false, desc: '공격 적중 시 위력×5% 확률로 치명타(피해 1.2배), 치명타가 나면 횟수 -1. 턴 종료 시 횟수 -1' },
+  charge:  { name: '충전', icon: '<i class="kwi kw-charge"></i>', emoji: '⚡', debuff: false, countOnly: true, max: 20, desc: '충전량(최대 20). 「충전 소모」 효과에 쓰입니다. 턴 종료 시 -1' },
   fragile: { name: '취약', icon: '💔', debuff: true,  countOnly: true, desc: '방어력 절반. 턴 종료 시 횟수 -1' },
   stun:    { name: '기절', icon: '💫', debuff: true,  countOnly: true, desc: '다음 턴을 건너뜀' },
   panic:   { name: '공황', icon: '😱', debuff: true,  countOnly: true, hidden: true, desc: '정신력 붕괴 — 다음 턴을 건너뜀' },
@@ -33,6 +33,7 @@ const has = (p, k) => p.status[k] && p.status[k].cnt > 0;
 function addStatus(p, key, pot = 0, cnt = 0, quiet = false) {
   if (!p.alive || !KEYWORDS[key]) return;
   const kw = KEYWORDS[key];
+  if (!p.status[key]) p.status[key] = { pot: 0, cnt: 0 };
   const s = p.status[key];
   if (kw.countOnly) {
     s.cnt = Math.min(kw.max || 99, s.cnt + Math.max(1, cnt || pot || 1));
@@ -47,21 +48,28 @@ function addStatus(p, key, pot = 0, cnt = 0, quiet = false) {
 
 function useCount(p, key, n = 1) {
   const s = p.status[key];
+  if (!s) return;
   s.cnt = Math.max(0, s.cnt - n);
   if (s.cnt === 0) s.pot = 0;
 }
 
 function cureAll(p) {
-  for (const k of ['burn', 'bleed', 'tremor', 'rupture', 'sinking', 'fragile']) p.status[k] = { pot: 0, cnt: 0 };
+  for (const k of Object.keys(KEYWORDS)) {
+    const kw = KEYWORDS[k];
+    if (kw.debuff && !kw.hidden && k !== 'stun') p.status[k] = { pot: 0, cnt: 0 };
+  }
 }
 
 function decayStatus(p) {
-  for (const k of DECAY_AT_TURN_END) if (has(p, k)) useCount(p, k);
+  for (const k of Object.keys(p.status)) {
+    const kw = KEYWORDS[k];
+    if (kw && (DECAY_AT_TURN_END.includes(k) || DECAY_AT_TURN_END.includes(kw.base)) && has(p, k)) useCount(p, k);
+  }
 }
 
 function statusHTML(p) {
   return Object.entries(p.status)
-    .filter(([, v]) => v.cnt > 0)
+    .filter(([k, v]) => v.cnt > 0 && KEYWORDS[k])
     .map(([k, v]) => {
       const kw = KEYWORDS[k];
       const val = kw.countOnly ? v.cnt : `${v.pot}<small>/${v.cnt}</small>`;
@@ -71,62 +79,78 @@ function statusHTML(p) {
 }
 
 // ---------------- 키워드 발동 ----------------
-// 턴 시작: 화상
+// 기본 키워드와 그것을 바탕으로 만든 나만의 키워드는 같은 방식으로 발동하고,
+// 나만의 키워드는 발동할 때 특수 효과(kwFire)가 함께 나감
+// 턴 시작: 화상 계열
 function triggerTurnStart(p) {
-  if (has(p, 'burn')) {
-    const s = p.status.burn;
-    damage(p, s.pot, `🔥 화상 (${s.pot})`);
-    useCount(p, 'burn');
+  for (const k of kwFamily('burn')) {
+    if (!p.alive || !has(p, k)) continue;
+    const s = p.status[k];
+    damage(p, s.pot, `${kwName(k)} (${s.pot})`);
+    useCount(p, k);
+    kwFire(p, k, null);
   }
 }
 
-// 공격할 때: 출혈
-function triggerOnAttack(p) {
-  if (has(p, 'bleed')) {
-    const s = p.status.bleed;
-    damage(p, s.pot, `🩸 출혈 (${s.pot})`);
-    useCount(p, 'bleed');
+// 공격할 때: 출혈 계열
+function triggerOnAttack(p, target = null) {
+  for (const k of kwFamily('bleed')) {
+    if (!p.alive || !has(p, k)) continue;
+    const s = p.status[k];
+    damage(p, s.pot, `${kwName(k)} (${s.pot})`);
+    useCount(p, k);
+    kwFire(p, k, target);
   }
 }
 
-// 피격될 때: 파열, 침잠
+// 피격될 때: 파열, 침잠 계열
 function triggerOnHit(target, attacker) {
-  if (!target.alive) return;
-  if (has(target, 'rupture')) {
-    const s = target.status.rupture;
-    damage(target, s.pot, `💥 파열 (${s.pot})`, attacker);
-    useCount(target, 'rupture');
+  for (const k of kwFamily('rupture')) {
+    if (!target.alive || !has(target, k)) continue;
+    const s = target.status[k];
+    damage(target, s.pot, `${kwName(k)} (${s.pot})`, attacker);
+    useCount(target, k);
+    kwFire(target, k, attacker);
   }
-  if (target.alive && has(target, 'sinking')) {
-    const s = target.status.sinking;
-    if (target.sp <= RULES.minSp) damage(target, s.pot, `🌊 침잠 — 정신력이 바닥나 피해 (${s.pot})`, attacker);
+  for (const k of kwFamily('sinking')) {
+    if (!target.alive || !has(target, k)) continue;
+    const s = target.status[k];
+    if (target.sp <= RULES.minSp) damage(target, s.pot, `${kwName(k)} — 정신력이 바닥나 피해 (${s.pot})`, attacker);
     else {
-      log(`${pname(target)} 🌊 침잠 — 정신력 -${s.pot}`);
+      log(`${pname(target)} ${kwName(k)} — 정신력 -${s.pot}`);
       changeSp(target, -s.pot);
     }
-    useCount(target, 'sinking');
+    useCount(target, k);
+    kwFire(target, k, attacker);
   }
 }
 
-// 치명타 판정: 호흡
-function rollCrit(attacker, dmg) {
-  if (!has(attacker, 'poise')) return dmg;
-  const s = attacker.status.poise;
+// 치명타 판정: 호흡 계열 (가진 것 중 위력이 가장 높은 것으로 판정)
+function rollCrit(attacker, dmg, target = null) {
+  const ks = kwFamily('poise').filter((k) => has(attacker, k)).sort((a, b) => attacker.status[b].pot - attacker.status[a].pot);
+  if (!ks.length) return dmg;
+  const k = ks[0];
+  const s = attacker.status[k];
   if (Math.random() < Math.min(1, s.pot * 0.05)) {
-    useCount(attacker, 'poise');
+    useCount(attacker, k);
     const crit = Math.floor(dmg * 1.2);
-    log(`${pname(attacker)} 🌬 <b>치명타!</b> ${dmg} → ${crit}`);
+    log(`${pname(attacker)} ${kwName(k)} <b>치명타!</b> ${dmg} → ${crit}`);
     floatText(attacker, '치명타!', 'sp');
+    kwFire(attacker, k, target);
     return crit;
   }
   return dmg;
 }
 
-function tremorBurst(target) {
-  if (!has(target, 'tremor')) return;
-  const s = target.status.tremor;
-  log(`${pname(target)} 〰 <b>진동 폭발!</b> 흐트러짐 피해 ${s.pot}`);
-  staggerDamage(target, s.pot);
+// 진동 폭발: 진동 계열 모두
+function tremorBurst(target, src = null) {
+  for (const k of kwFamily('tremor')) {
+    if (!target.alive || !has(target, k)) continue;
+    const s = target.status[k];
+    log(`${pname(target)} ${kwName(k)} <b>폭발!</b> 흐트러짐 피해 ${s.pot}`);
+    staggerDamage(target, s.pot);
+    kwFire(target, k, src);
+  }
 }
 
 // ---------------- 카드 효과 ----------------
@@ -161,14 +185,43 @@ const EFFECT_DEFS = {
   pwrLowHp:    { label: '내 HP 절반 이하면 위력 증가', pot: true, coinOnly: true, preRoll: true, potLabel: '증가 위력' },
   pwrHighSp:   { label: '내 정신력이 기준 이상이면 위력 증가', pot: true, cnt: true, coinOnly: true, preRoll: true, potLabel: '증가 위력', cntLabel: '정신력 기준' },
   reuse:       { label: '코인 재사용 (앞면이면 다시 던짐)', cnt: true, coinOnly: true, preRoll: true, cntLabel: '최대 횟수' },
+  customKw:    { label: '나만의 키워드 부여', pot: true, cnt: true, kwSel: 'custom' },
 };
 
 // 키워드를 고르는 효과의 선택지
 const KW_SEL = {
   any: ['burn', 'bleed', 'tremor', 'rupture', 'sinking', 'fragile', 'staggered'],
   burst: ['bleed', 'burn', 'rupture', 'sinking', 'tremor'],
+  custom: [],   // 팩의 나만의 키워드 (공방에서 채움)
 };
 const kwName = (k) => (KEYWORDS[k] ? KEYWORDS[k].icon + KEYWORDS[k].name : k);
+// 글자만 들어가는 곳(선택 상자 등)용
+const kwPlain = (k) => (KEYWORDS[k] ? (KEYWORDS[k].emoji || KEYWORDS[k].icon) + ' ' + KEYWORDS[k].name : k);
+const KW_ICON_KEYS = ['burn', 'bleed', 'tremor', 'rupture', 'sinking', 'poise', 'charge'];
+
+// ---- 이 기기에서만 쓰는 키워드 아이콘 그림 (localStorage, 다른 사람에게 보내지 않음) ----
+const KW_ICON_STORE = 'af_kw_icons';
+const KW_IMG_RE = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
+function getKwIcons() {
+  try {
+    const o = JSON.parse(localStorage.getItem(KW_ICON_STORE) || '{}');
+    const out = {};
+    for (const k of KW_ICON_KEYS) if (typeof o[k] === 'string' && KW_IMG_RE.test(o[k]) && o[k].length < 120000) out[k] = o[k];
+    return out;
+  } catch { return {}; }
+}
+function applyKwIcons() {
+  let st = document.getElementById('kw-custom');
+  if (!st) { st = document.createElement('style'); st.id = 'kw-custom'; document.head.appendChild(st); }
+  st.textContent = Object.entries(getKwIcons()).map(([k, url]) => `.kwi.kw-${k} { background-image: url("${url}") !important; }`).join('\n');
+}
+function saveKwIcon(k, url) {
+  const o = getKwIcons();
+  if (url) o[k] = url; else delete o[k];
+  try { localStorage.setItem(KW_ICON_STORE, JSON.stringify(o)); } catch { return false; }
+  applyKwIcons();
+  return true;
+}
 
 const WHEN_TEXT = { use: '사용 시', hit: '적중 시', heads: '앞면 적중 시' };
 const WHEN_TEXT_ARMOR = { use: '수비 시', hit: '수비 성공 시', heads: '앞면일 때' };
@@ -192,8 +245,8 @@ function effectText(e, armor = false) {
     return `[던지기 전] ${body}`;
   }
   let body;
-  if (KEYWORDS[e.key] && !KEYWORDS[e.key].countOnly) body = `${who}에게 ${KEYWORDS[e.key].name} ${e.pot || 0}/${e.cnt || 0}`;
-  else if (e.key === 'charge' || e.key === 'fragile') body = `${who}에게 ${KEYWORDS[e.key].name} ${e.cnt || 1}`;
+  if (KEYWORDS[e.key] && !KEYWORDS[e.key].countOnly) body = `${who}에게 ${kwName(e.key)} ${e.pot || 0}/${e.cnt || 0}`;
+  else if (e.key === 'charge' || e.key === 'fragile') body = `${who}에게 ${kwName(e.key)} ${e.cnt || 1}`;
   else if (e.key === 'stun') body = `${who} 기절`;
   else if (e.key === 'tremorBurst') body = `${who}에게 진동 폭발`;
   else if (e.key === 'stagger') body = `${who}에게 흐트러짐 피해 ${e.pot || 0}`;
@@ -203,6 +256,7 @@ function effectText(e, armor = false) {
   else if (e.key === 'won') body = `${who} +${e.pot || 0}안`;
   else if (e.key === 'draw') body = `${who} 카드 ${e.pot || 0}장`;
   else if (e.key === 'cure') body = `${who} 상태 이상 해제`;
+  else if (e.key === 'customKw') body = `${who}에게 ${KEYWORDS[e.kw] ? kwName(e.kw) : '(지워진 키워드)'} ${e.pot || 0}/${e.cnt || 0}`;
   else if (e.key === 'kwBurst') body = `${who}의 ${kwName(e.kw)} 폭발 (위력만큼 ${e.kw === 'tremor' ? '흐트러짐 ' : ''}피해, 횟수 -1)`;
   else if (e.key === 'breakArmor') body = `${who}의 방어구 1장 파괴`;
   else if (e.key === 'stealWon') body = `${who}의 돈 ${e.pot || 0}안 빼앗기`;
@@ -219,7 +273,8 @@ function applyEffect(e, src, enemy) {
     return;
   }
   switch (e.key) {
-    case 'tremorBurst': tremorBurst(t); break;
+    case 'tremorBurst': tremorBurst(t, t === src ? null : src); break;
+    case 'customKw': if (KEYWORDS[e.kw] && KEYWORDS[e.kw].custom) addStatus(t, e.kw, e.pot || 0, e.cnt || 0); break;
     case 'stagger': log(`${pname(t)} 흐트러짐 피해 ${e.pot || 0}`); staggerDamage(t, e.pot || 0); break;
     case 'dmg': damage(t, e.pot || 0, '고정 피해', src); break;
     case 'heal': { const got = heal(t, e.pot || 0); if (got) log(`${pname(t)} HP ${got} 회복`); break; }
@@ -231,9 +286,11 @@ function applyEffect(e, src, enemy) {
       const k = e.kw;
       if (!KEYWORDS[k] || !has(t, k)) break;
       const pot = t.status[k].pot;
-      if (k === 'tremor') { log(`${pname(t)} 〰 진동 폭발! 흐트러짐 피해 ${pot}`); staggerDamage(t, pot); }
+      const base = KEYWORDS[k].base || k;
+      if (base === 'tremor') { log(`${pname(t)} ${kwName(k)} 폭발! 흐트러짐 피해 ${pot}`); staggerDamage(t, pot); }
       else damage(t, pot, `${kwName(k)} 폭발`, src);
       useCount(t, k);
+      kwFire(t, k, t === src ? null : src);
       break;
     }
     case 'breakArmor': {

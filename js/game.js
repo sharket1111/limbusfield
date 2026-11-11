@@ -106,7 +106,8 @@ function cpuPackDefs() {
 function makePlayer(id, name, avatar, ctrl) {
   return {
     id, name, avatar, ctrl,
-    hp: RULES.maxHp, sp: 0, won: RULES.startWon, stg: RULES.staggerMax,
+    hp: RULES.maxHp, maxHp: RULES.maxHp, sp: 0, won: RULES.startWon, stg: RULES.staggerMax, stgMax: RULES.staggerMax,
+    res: { slash: 1, pierce: 1, blunt: 1 }, passives: [],
     hand: [],
     pile: null,
     status: newStatus(),
@@ -131,15 +132,14 @@ function drawCards(p, n = 1) {
       nightEvent(p);
       continue;
     }
-    if (p.hand.length >= RULES.maxHand) break;
+    if (handFull(p)) break;
     if (!pile.deck.length) {
       if (!pile.discard.length) break;
       pile.deck = shuffle(pile.discard);
       pile.discard = [];
       log(`<i>${G.deckMode === 'personal' ? p.name + '의 ' : ''}버려진 카드를 다시 섞어 덱을 만들었습니다.</i>`);
     }
-    p.hand.push(pile.deck.pop());
-    got++;
+    if (takeCard(p, pile.deck.pop())) got++;
   }
   return got;
 }
@@ -167,6 +167,22 @@ function nightEvent(p) {
   }
 }
 
+// E.G.O는 손패 장수에 세지 않고 따로 최대 RULES.maxEgo장까지 보관
+const egoCount = (p) => p.hand.filter((c) => c && c.type === 'ego').length;
+const handCards = (p) => p.hand.filter((c) => c && c.type !== 'ego').length;
+const handFull = (p) => handCards(p) >= RULES.maxHand;
+// 카드를 손에 넣기 (E.G.O 보관함이 가득이면 버림)
+function takeCard(p, card) {
+  if (card.type === 'ego' && egoCount(p) >= RULES.maxEgo) {
+    toDiscard(p, card);
+    log(`${pname(p)} E.G.O 보관함이 가득 차 ${cname(card)}을(를) 버렸습니다 (최대 ${RULES.maxEgo}개)`);
+    toastTo(p, `E.G.O는 최대 ${RULES.maxEgo}개까지 보관됩니다`, 'bad');
+    return false;
+  }
+  p.hand.push(card);
+  return true;
+}
+
 function discardCard(p, card) {
   const i = p.hand.findIndex((c) => c.uid === card.uid);
   if (i >= 0) p.hand.splice(i, 1);
@@ -174,7 +190,7 @@ function discardCard(p, card) {
 }
 const toDiscard = (p, card) => pileOf(p).discard.push(card);
 function giveCard(p, card) {
-  if (p.alive && p.hand.length < RULES.maxHand) p.hand.push(card); else toDiscard(p, card);
+  if (p.alive && (card.type === 'ego' || !handFull(p))) takeCard(p, card); else toDiscard(p, card);
 }
 
 // ------------------------------------------------------------
@@ -296,7 +312,7 @@ function damage(p, n, source = '', killer = null) {
 function heal(p, n) {
   if (!p.alive || n <= 0) return 0;
   const before = p.hp;
-  p.hp = Math.min(RULES.maxHp, p.hp + n);
+  p.hp = Math.min(p.maxHp || RULES.maxHp, p.hp + n);
   const got = p.hp - before;
   if (got > 0) floatText(p, '+' + got, 'heal');
   return got;
@@ -343,6 +359,7 @@ function kill(p, killer = null) {
   toastAll(`${p.name} 탈락!`, 'bad');
   // 누군가 쓰러지면: 처치자는 고양, 나머지는 동요
   for (const q of alive()) changeSp(q, q === killer ? 15 : -5, true);
+  if (killer && killer.alive) firePassives(killer, 'kill', null);
 }
 
 function changeSp(p, n, quiet = false) {
@@ -418,8 +435,8 @@ function clashSim(aBase, aCoins, spA, dBase, dCoins, spD, n = 400) {
   for (let i = 0; i < n; i++) {
     const r = runClash(aBase, aCoins, chA, dBase, dCoins, chD, rnd);
     rounds += r.rounds.length;
-    if (r.winner === 'a') { const dmg = aBase + coinSum(rollWith(r.aLeft, chA, rnd)); lose++; exp += dmg; max = Math.max(max, dmg); }
-    else if (r.winner === 'd') { win++; expD += dBase + coinSum(rollWith(r.dLeft, chD, rnd)); }
+    if (r.winner === 'a') { const dmg = planTotal(hitPlan(aBase, rollWith(r.aLeft, chA, rnd), aCoins.length)); lose++; exp += dmg; max = Math.max(max, dmg); }
+    else if (r.winner === 'd') { win++; expD += planTotal(hitPlan(dBase, rollWith(r.dLeft, chD, rnd), dCoins.length)); }
     else tie++;
   }
   return { win: win / n, tie: tie / n, lose: lose / n, exp: exp / n, expD: expD / n, max, rounds: rounds / n };
@@ -477,7 +494,9 @@ function buildAttack(cards) {
     if (i > 0 && Array.isArray(c.coins)) coins = coins.concat(c.coins.map((x) => ({ ...x })));
   });
   const coinMax = coins.reduce((s, c) => s + c.power, 0);
-  return { atk, attr: main.attr, fx: [...fx], effects, coins, coinMax, cards, name: cards.map((c) => c.name).join(' + ') };
+  // 공격 가중치: 이 공격에 맞는 사람 수 (주 카드 기준)
+  const weight = Math.max(1, Math.min(5, Math.round(+main.weight || 1)));
+  return { atk, attr: main.attr, dtype: dtypeOf(main), fx: [...fx], effects, coins, coinMax, cards, weight, name: cards.map((c) => c.name).join(' + ') };
 }
 
 // 수비 코인
@@ -494,8 +513,9 @@ function defenseCoins(armors) {
 const DEF_KIND = { guard: '가드', evade: '회피', counter: '반격' };
 const defKind = (c) => (c && DEF_KIND[c.kind] ? c.kind : 'guard');
 
-function armorMatches(armor, attr) {
-  return armor.attr === 'all' || armor.attr === attr;
+// 공격 유형·속성과 상관없이 모든 수비 카드로 대응 가능
+function armorMatches() {
+  return true;
 }
 
 function armorDef(target, armors) {
@@ -506,15 +526,21 @@ function armorDef(target, armors) {
 
 async function performAttack(attacker, cards, targets) {
   const info = buildAttack(cards);
-  if (cards[0].type === 'ego') changeSp(attacker, -cards[0].cost);
-  for (const c of cards) discardCard(attacker, c);
+  if (cards[0].type === 'ego') { changeSp(attacker, -cards[0].cost); await playEgoCine(attacker, cards[0]); }
+  for (const c of cards) if (c.type !== 'ego') discardCard(attacker, c);   // E.G.O는 계속 보관
 
   if (info.fx.includes('all')) targets = others(attacker);
+  else if (info.weight > 1 && targets.length) {
+    // 가중치: 고른 대상 + 나머지 상대 중 무작위로 (가중치 - 1)명
+    const main = targets[0];
+    const extra = shuffle(others(attacker).filter((q) => q !== main)).slice(0, info.weight - 1);
+    targets = [main, ...extra];
+  }
   const tText = info.fx.includes('all') ? '<b>전원</b>' : targets.map(pname).join(', ');
   const a = ATTR[info.attr];
   showStage(attacker, cards, tText,
     `<span style="color:${a.color}">${a.icon} ${a.name}</span> 위력 <b>${info.atk}</b> + 코인 ${info.coins.length}개` +
-    (info.fx.length ? ' · ' + info.fx.map((f) => FX_TEXT[f]).join(', ') : ''));
+    (info.fx.length ? ' · ' + info.fx.map((f) => FX_TEXT[f]).join(', ') : '') + (info.weight > 1 && !info.fx.includes('all') ? ` · 가중치 ${info.weight}` : ''));
   log(`${pname(attacker)} ▶ ${tText} : ${cards.map(cname).join(' + ')} <span class="muted">(${a.icon}${info.atk})</span>`);
   renderAll();
   await sleep(700);
@@ -524,7 +550,7 @@ async function performAttack(attacker, cards, targets) {
 
   // 출혈: 공격할 때마다 피해
   if (has(attacker, 'bleed')) {
-    triggerOnAttack(attacker);
+    triggerOnAttack(attacker, targets[0] || null);
     renderAll();
     await sleep(350);
     if (!attacker.alive) return;
@@ -562,7 +588,7 @@ function prepareCoins(p, coins, ctx = {}) {
       } else if (e.key === 'pwrOneSided' && !ctx.clash) why = '일방 공격';
       else if (e.key === 'pwrClash' && ctx.clash) why = '합';
       else if (e.key === 'pwrIfKw' && ctx.foe && has(ctx.foe, e.kw)) why = `상대 ${kwName(e.kw)}`;
-      else if (e.key === 'pwrLowHp' && p.hp <= RULES.maxHp / 2) why = '빈사';
+      else if (e.key === 'pwrLowHp' && p.hp <= (p.maxHp || RULES.maxHp) / 2) why = '빈사';
       else if (e.key === 'pwrHighSp' && p.sp >= (e.cnt || 0)) why = `정신력 ${e.cnt} 이상`;
       else if (e.key === 'reuse') reuse += e.cnt || 1;
       if (why) { power += pot; boosts.push(`${why} +${pot}`); }
@@ -652,15 +678,17 @@ async function resolveHit(attacker, target, info) {
     const result = cl.winner === 'a' ? 'atk' : cl.winner === 'd' ? 'def' : 'tie';
     const W = cl.winner === 'a' ? attacker : target, L = cl.winner === 'a' ? target : attacker;
     const winfo = cl.winner === 'a' ? info : dinfo;
-    let strike = [], dmg = 0;
+    let strike = [], dmg = 0, plan = [];
     if (cl.winner !== 't') {
       strike = rollCoins(W, cl.winner === 'a' ? cl.aLeft : cl.dLeft);
-      dmg = winfo.atk + coinSum(strike);
+      const n = cl.winner === 'a' ? aCoins.length : dCoins.length;
+      plan = hitPlan(winfo.atk, strike, n, cl.winner === 'a' && info.fx.includes('all'));
+      dmg = planTotal(plan);
     }
     const last = cl.rounds[cl.rounds.length - 1];
     const ms = showClash(attacker, info, last.a, last.pa, target, dcards, last.d, last.pd, 'clash', result, dmg,
       result === 'atk' ? 'd' : result === 'def' ? 'a' : '', dinfo.atk,
-      { aN: aCoins.length, dN: dCoins.length, rounds: cl.rounds, strike: { s: cl.winner, coins: strike } });
+      { aN: aCoins.length, dN: dCoins.length, rounds: cl.rounds, strike: { s: cl.winner, coins: strike, hits: packHits(plan) } });
     log(`⚔ 합 ×${cl.rounds.length}! ${pname(attacker)} vs ${pname(target)} ${dcards.map(cname).join(' + ')} — ${cl.rounds.map((r) => `<b class="${r.w === 'a' ? 'neg' : r.w === 'd' ? 'pos' : ''}">${r.pa}:${r.pd}</b>`).join(' · ')}`);
     renderAll();
     await sleep(ms);
@@ -669,9 +697,10 @@ async function resolveHit(attacker, target, info) {
       floatText(target, '상쇄', 'block');
       return;
     }
-    log(`${pname(W)} 합 승리! 남은 코인 ${strike.length}개로 위력 <b>${dmg}</b> ${coinsHTML(strike)}`);
+    log(`${pname(W)} 합 승리! 남은 코인 ${strike.length}개로 ${plan.length}회 공격 ${coinsHTML(strike)}`);
     changeSp(W, 5, true); changeSp(L, -5, true);
-    landHit(W, L, dmg, winfo, strike);
+    firePassives(W, 'clashWin', L);
+    strikeHits(W, L, winfo, plan);
     return;
   }
 
@@ -681,11 +710,14 @@ async function resolveHit(attacker, target, info) {
 
   // 무방비
   if (!contested) {
-    const ms = showClash(attacker, info, ca, pa, target, [], null, null, 'open', 'open', pa, 'd');
-    log(`${pname(attacker)} 위력 <b>${pa}</b> ${coinsHTML(ca)} → ${pname(target)} 무방비${pierce ? ' (관통)' : ''}`);
+    const plan = hitPlan(info.atk, ca, info.coins.length, info.fx.includes('all'));
+    const total = planTotal(plan);
+    const ms = showClash(attacker, info, ca, pa, target, [], null, null, 'open', 'open', total, 'd', 0,
+      { strike: { s: 'a', coins: ca, hits: packHits(plan) } });
+    log(`${pname(attacker)} ${coinsHTML(ca)} → ${pname(target)} 무방비 ${plan.length}회 공격${info.fx.includes('all') ? ' (광역: 앞면만 적중)' : ''}${pierce ? ' (방어 무시)' : ''}`);
     renderAll();
     await sleep(ms);
-    landHit(attacker, target, pa, info, ca);
+    strikeHits(attacker, target, info, plan);
     return;
   }
 
@@ -757,11 +789,11 @@ function showClash(attacker, info, ca, pa, target, dcards, cd, pd, mode, result,
   const d = validateClash({
     aN: extra.aN, dN: extra.dN,
     rounds: (extra.rounds || []).map((r) => ({ a: pack(r.a), d: pack(r.d), pa: r.pa, pd: r.pd, w: r.w })),
-    strike: extra.strike ? { s: extra.strike.s, coins: pack(extra.strike.coins) } : null,
+    strike: extra.strike ? { s: extra.strike.s, coins: pack(extra.strike.coins), hits: extra.strike.hits || [] } : null,
     aId: attacker.id, dId: target.id, mode, result,
     aBase: info.atk, dBase, aCoins: pack(ca), dCoins: pack(cd), pa: pa || 0, pd: pd || 0,
     aCards: info.cards.map(cardRef), dCards: dcards.map(cardRef),
-    gear: info.cards[0].type === 'ego' ? 'orb' : 'blade', attr: info.attr,
+    gear: info.cards[0].type === 'ego' ? 'orb' : 'blade', attr: info.attr, ego: info.cards[0].type === 'ego' ? 1 : 0,
     stag: has(target, 'staggered') ? 1 : 0, spd: G.speed, dmg, dmgTo,
   });
   renderClash(d);
@@ -769,15 +801,84 @@ function showClash(attacker, info, ca, pa, target, dcards, cd, pd, mode, result,
   return clashDuration(d);
 }
 
-// 피해 적중 공통 처리
+// 코인별 타격 계획
+//  기본 공격력은 원래 코인 수(n)로 나눠 각 코인에 싣고, 앞면이면 그 코인의 위력이 더해짐
+//  광역(전체 공격)은 앞면 코인만 적중 — 뒷면 코인은 빗나감
+//  반환: [{ dmg, roll, miss }]
+function hitPlan(base, rolls, n, aoe) {
+  if (!rolls.length) return [{ dmg: base, roll: null, miss: false }];
+  n = Math.max(1, n, rolls.length);
+  const share = (i) => Math.floor((base * (i + 1)) / n) - Math.floor((base * i) / n);
+  return rolls.map((r, i) => ({ dmg: share(i) + (r.head ? r.power : 0), roll: r, miss: !!aoe && !r.head }));
+}
+const planTotal = (plan) => plan.reduce((s, h) => s + (h.miss ? 0 : h.dmg), 0);
+const packHits = (plan) => plan.map((h) => ({ d: h.dmg, m: h.miss ? 1 : 0 }));
+
+// 코인마다 한 번씩 때림 (치명타·흐트러짐 배율·코인 효과·파열/침잠은 타격마다, 정신력·흡수·카드 적중 효과는 한 번)
+function strikeHits(attacker, target, info, plan) {
+  let dealt = 0, landed = 0;
+  const stag = has(target, 'staggered');
+  const rm = resOf(target, info.dtype);
+  if (rm !== 1) log(`${pname(target)} ${DTYPES[info.dtype].icon} ${DTYPES[info.dtype].name} ${resInfo(rm)[1]} — 피해 ×${rm}`);
+  plan.forEach((h, i) => {
+    if (!target.alive) return;
+    const tag = plan.length > 1 ? ` ${i + 1}타` : '';
+    if (h.miss) { log(`${pname(attacker)}${tag} 뒷면 — <span class="muted">빗나감</span>`); return; }
+    landed++;
+    let dmg = rollCrit(attacker, h.dmg, target);
+    if (stag) dmg = Math.ceil(dmg * RULES.staggerMult);
+    if (rm !== 1) dmg = Math.round(dmg * rm);
+    if (dmg > 0) {
+      damage(target, dmg, `<span class="muted">${info.name}${tag}</span>${stag ? ' 💢' : ''} 피격`, attacker);
+      staggerDamage(target, dmg);
+      dealt += dmg;
+    }
+    if (h.roll) applyEffects((h.roll.coin.fx || []).filter((e) => e.when === 'hit' || (e.when === 'heads' && h.roll.head)), attacker, target);
+    triggerOnHit(target, attacker);
+  });
+  if (!landed) {
+    floatText(target, '빗나감', 'block');
+    log(`${pname(attacker)}의 공격이 ${pname(target)}에게 모두 빗나갔습니다`);
+    return 0;
+  }
+  attacker.dmgDealt += dealt;
+  changeSp(attacker, 5, true);
+  changeSp(target, -Math.max(2, Math.floor(dealt / 2)), true);
+  if (info.fx.includes('lifesteal') && attacker.alive && dealt) {
+    const got = heal(attacker, Math.floor(dealt / 2));
+    if (got) log(`${pname(attacker)} 흡혈로 HP ${got} 회복`);
+  }
+  if (info.fx.includes('drainsp') && target.alive) {
+    log(`${pname(attacker)} 이(가) ${pname(target)}의 정신력 10 흡수`);
+    changeSp(target, -10);
+    changeSp(attacker, 10);
+  }
+  if (info.fx.includes('mind') && target.alive) {
+    log(`${pname(target)} 🌀 정신 피해 — 정신력 -10`);
+    changeSp(target, -10);
+  }
+  if (target.alive) applyEffects(info.effects.filter((e) => e.when === 'hit'), attacker, target);
+  firePassives(attacker, 'hit', target);
+  if (dealt > 0) firePassives(target, 'hurt', attacker);
+  return dealt;
+}
+
+// 피해 적중 공통 처리 (한 번에 들어가는 피해: 가드 후 피해, 반격 등)
 function landHit(attacker, target, dmg, info, rolls = []) {
   if (dmg <= 0) return;
-  dmg = rollCrit(attacker, dmg);
+  dmg = rollCrit(attacker, dmg, target);
   if (has(target, 'staggered')) {
     const up = Math.ceil(dmg * RULES.staggerMult);
     log(`💢 흐트러진 상대에게 ${dmg} → <b>${up}</b> 피해`);
     dmg = up;
   }
+  const rm = resOf(target, info.dtype);
+  if (rm !== 1) {
+    const r = Math.round(dmg * rm);
+    log(`${pname(target)} ${DTYPES[info.dtype].icon} ${DTYPES[info.dtype].name} ${resInfo(rm)[1]} — ${dmg} → <b>${r}</b>`);
+    dmg = r;
+  }
+  if (dmg <= 0) return;
   damage(target, dmg, `<span class="muted">${info.name}</span> 피격`, attacker);
   attacker.dmgDealt += dmg;
   staggerDamage(target, dmg);
@@ -810,8 +911,8 @@ function landHit(attacker, target, dmg, info, rolls = []) {
 //  도구 / 보조 E.G.O
 // ------------------------------------------------------------
 async function useSupport(p, card, target) {
-  if (card.type === 'ego') changeSp(p, -card.cost, true);
-  discardCard(p, card);
+  if (card.type === 'ego') { changeSp(p, -card.cost, true); await playEgoCine(p, card); }
+  else discardCard(p, card);   // E.G.O는 계속 보관
   const tgtText = target && target !== p ? pname(target) : pname(p);
   showStage(p, [card], tgtText);
   log(`${pname(p)} ${cname(card)} 사용`);
@@ -867,14 +968,13 @@ async function useSupport(p, card, target) {
 // 기도: 손패가 가득 차 있으면 가장 쓸모없는 카드 1장을 버리고 뽑음
 function pray(p) {
   let tossed = null;
-  if (p.hand.length >= RULES.maxHand) {
+  if (handFull(p)) {
     const val = (c) => (c.type === 'armor' ? c.def * 0.8 : c.type === 'weapon' ? c.atk : 10) + (c.rarity || 1) * 3;
-    tossed = [...p.hand].sort((a, b) => val(a) - val(b))[0];
+    tossed = p.hand.filter((c) => c.type !== 'ego').sort((a, b) => val(a) - val(b))[0];
     discardCard(p, tossed);
   }
   const n = drawCards(p, 1);
-  changeSp(p, 10);
-  log(`${pname(p)} 🙏 기도했습니다 (${tossed ? `${cname(tossed)} 버림, ` : ''}카드 ${n}장, 정신력 +10)`);
+  log(`${pname(p)} 🙏 기도했습니다 (${tossed ? `${cname(tossed)} 버림, ` : ''}카드 ${n}장)`);
 }
 
 // ------------------------------------------------------------
@@ -937,7 +1037,7 @@ async function tradeSell(p, card, goods, target) {
 function exchangeLimits(p) {
   return {
     total: p.hp + p.sp + p.won,
-    hp: [1, RULES.maxHp],
+    hp: [1, p.maxHp || RULES.maxHp],
     sp: [Math.min(p.sp, 0), RULES.maxSp],   // 정신력은 0(또는 현재값) 아래로는 못 내림
     won: [0, RULES.maxWon],
   };
@@ -968,8 +1068,6 @@ async function tradeExchange(p, card, plan) {
 }
 
 const itemHitsEnemy = (c) => c.type === 'item' && (c.effects || []).some((e) => e.target === 'enemy');
-const isFreeAction = (c) => (c.type === 'item' && !itemHitsEnemy(c)) || (c.type === 'ego' && ['heal', 'cure'].includes(c.kind)) ||
-  (c.type === 'trade' && c.kind === 'exchange');
 const needsTarget = (c) => itemHitsEnemy(c) ||
   (c.type === 'trade' && (c.kind === 'buy' || c.kind === 'sell')) ||
   (c.type === 'weapon' && !hasFx(c, 'all')) ||
@@ -1011,7 +1109,7 @@ async function executeAction(p, a) {
   if (card.type === 'trade') {
     if (card.kind === 'exchange') {
       const ok = await tradeExchange(p, card, a.plan);
-      return R(false, ok, ok ? '' : '환전 값이 올바르지 않습니다');
+      return R(ok, ok, ok ? '' : '환전 값이 올바르지 않습니다');
     }
     if (card.kind === 'buy') {
       await tradeBuy(p, card, target, buyDeciderFor(p, target));
@@ -1022,11 +1120,8 @@ async function executeAction(p, a) {
     await tradeSell(p, card, goods, target);
     return R(true);
   }
-  if (isFreeAction(card)) {
-    await useSupport(p, card, p);
-    return R(false);
-  }
-  await useSupport(p, card, target);
+  // 어떤 카드를 쓰든 턴이 끝남 (대상이 필요 없는 카드는 자신에게)
+  await useSupport(p, card, needsTarget(card) ? target : p);
   return R(true);
 }
 
@@ -1075,14 +1170,21 @@ async function takeTurn(p) {
   await sleep(450);
 
   // 흐트러짐 게이지 회복
-  if (!has(p, 'staggered')) p.stg = Math.min(RULES.staggerMax, p.stg + RULES.staggerRegen);
+  if (!has(p, 'staggered')) p.stg = Math.min(p.stgMax || RULES.staggerMax, p.stg + RULES.staggerRegen);
 
-  // 화상
-  if (has(p, 'burn')) {
+  // 화상 계열
+  if (kwFamily('burn').some((k) => has(p, k))) {
     triggerTurnStart(p);
     renderAll();
     await sleep(350);
     if (!p.alive) return;
+  }
+  // 패시브: 턴 시작 시
+  if (p.passives && p.passives.some((ps) => ps.on === 'turnStart')) {
+    firePassives(p, 'turnStart');
+    renderAll();
+    await sleep(300);
+    if (!p.alive || checkEnd()) return;
   }
 
   const staggered = has(p, 'staggered');
@@ -1102,7 +1204,7 @@ async function takeTurn(p) {
       log(`${pname(p)} 💢 흐트러져서 행동할 수 없습니다. 자세를 바로잡습니다... (흐트러짐 게이지 회복)`);
       floatText(p, '흐트러짐', 'block');
       p.status.staggered = { pot: 0, cnt: 0 };
-      p.stg = RULES.staggerMax;
+      p.stg = p.stgMax || RULES.staggerMax;
     }
     if (panicking) {
       log(`${pname(p)} 😱 공황 상태라 행동할 수 없습니다. 정신을 추스릅니다... (정신력 0으로 회복)`);
@@ -1182,14 +1284,20 @@ function startMatch(cfg) {
   G.sel = { main: null, plus: [], target: null, goods: null };
   G.defs = {};
   registerDefs(CARDS);
+  clearCustomKeywords();
+  cfg.players.forEach((x, i) => {
+    for (const k of (x.pack && x.pack.keywords) || []) registerKeyword({ ...k, fx: k.fx.map((e) => nsEffect(e, `p${i}`)) }, `p${i}_${k.id}`);
+  });
 
   G.players = cfg.players.map((x, i) => {
     const p = makePlayer(i, x.name, x.avatar, x.ctrl);
     p.cid = x.cid;
     p.look = normalizeLook(x.look) || randomLook(x.name);
     p.packName = x.pack ? x.pack.name : '';
-    p.packDefs = x.pack && x.pack.cards.length ? nsCards(x.pack.cards, `p${i}`) : [];
+    p.packDefs = x.pack && x.pack.cards && x.pack.cards.length ? x.pack.cards.map((c) => nsCard(c, `p${i}`)) : [];
     registerDefs(p.packDefs);
+    applySheet(p, x.pack && x.pack.sheet);
+    p.passives = p.passives.map((ps) => ({ ...ps, e: nsEffect(ps.e, `p${i}`) }));
     return p;
   });
 
