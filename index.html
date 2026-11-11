@@ -20,18 +20,8 @@
   <link rel="stylesheet" href="css/frame.css">
 </head>
 <body>
-  <!-- 뒷골목 배경 (js/scenery.js가 그림) -->
-  <div id="bg" aria-hidden="true"></div>
-  <!-- 화면 가장자리 프레임 -->
-  <div id="frame" aria-hidden="true">
-    <i class="fc tl"></i><i class="fc tr"></i><i class="fc bl"></i><i class="fc br"></i>
-    <i class="fh top"></i><i class="fh bottom"></i>
-    <i class="fs left"></i><i class="fs right"></i>
-    <span class="ft lv">ANOMALY FIELD // DISTRICT 00</span>
-    <span class="ft rv" id="frame-clock">BACKSTREET</span>
-    <span class="ft bl"><i class="dot"></i>SYS ONLINE</span>
-    <span class="ft br">CLASH PROTOCOL v1</span>
-  </div>
+  <!-- 전투 시네마틱 (합 연출을 전체 화면으로) -->
+  <div id="cine" class="cine" aria-hidden="true"></div>
 
   <!-- 타이틀 -->
   <section id="title" class="screen show">
@@ -239,6 +229,7 @@
       <select id="in-speed-game" title="속도">
         <option value="1.6">느림</option><option value="1" selected>보통</option><option value="0.5">빠름</option>
       </select>
+      <button class="btn small" id="btn-cine" title="전투 연출 방식">🎬 전체 화면</button>
       <button class="btn theme-toggle" title="다크 / 라이트 모드">🌙</button>
       <button class="btn small open-rules">규칙</button>
     </header>

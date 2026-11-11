@@ -136,20 +136,5 @@ function buildBackstreet() {
   return `<svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMax slice" xmlns="http://www.w3.org/2000/svg">${o.join('')}</svg>`;
 }
 
-function initScenery() {
-  const bg = document.getElementById('bg');
-  if (bg) bg.innerHTML = buildBackstreet() + '<div class="rain"></div>';
-  updateFrameClock();
-  setInterval(updateFrameClock, 20000);
-}
-
-// 가장자리 시계 (뒷골목의 밤이면 NIGHT)
-function updateFrameClock() {
-  const clock = document.getElementById('frame-clock');
-  if (!clock) return;
-  const d = new Date();
-  const hh = String(d.getHours()).padStart(2, '0'), mm = String(d.getMinutes()).padStart(2, '0');
-  clock.textContent = `BACKSTREET · ${hh}:${mm} · ${document.body.classList.contains('night') ? 'NIGHT' : 'DUSK'}`;
-}
-
-document.addEventListener('DOMContentLoaded', initScenery);
+// (예전 전체 화면 프레임용 — 지금은 쓰지 않음, 호출해도 안전하게 비워 둠)
+function updateFrameClock() {}

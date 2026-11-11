@@ -1,5 +1,5 @@
 /* ============================================================
-   2D 합 연출 + 캐릭터 꾸미기
+   2D 캐릭터, 전투 시네마틱(합 연출), 캐릭터 꾸미기
    ============================================================ */
 .char-svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .char-svg.bust { overflow: hidden; }
@@ -14,100 +14,199 @@
 .mp-face { display: inline-flex; }
 @media (max-width: 760px) { .opp-av .char-svg { width: 32px; height: 32px; } }
 
-/* ---------- 무대 ---------- */
-#stage:has(.arena) { padding: 6px; }
-.arena { position: relative; width: 100%; height: 270px; overflow: hidden; --spd: 1; }
-.arena::after { content: ''; position: absolute; left: 4%; right: 4%; bottom: 22px; height: 2px;
-  background: linear-gradient(90deg, transparent, var(--line), transparent); }
-.arena-title { position: absolute; top: 4px; left: 0; right: 0; text-align: center; font-family: 'Noto Serif KR', serif;
-  font-weight: 900; letter-spacing: .2em; color: var(--muted); font-size: 13px; }
+/* ============================================================
+   전투 시네마틱
+   ============================================================ */
+/* 전체 화면 오버레이 */
+.cine { position: fixed; inset: 0; z-index: 70; display: none; background: #000; cursor: pointer; }
+.cine.show { display: block; animation: cinein .18s ease-out; }
+@keyframes cinein { from { opacity: 0; } }
+.cine.shake, #stage.shake { animation: stshake .3s; }
+@keyframes stshake { 20% { transform: translate(-8px, 3px); } 40% { transform: translate(7px, -4px); } 60% { transform: translate(-4px, 2px); } 80% { transform: translate(3px, -1px); } }
 
-.fighter { position: absolute; bottom: 14px; width: 128px; display: flex; flex-direction: column; align-items: center;
+#stage:has(.arena) { padding: 0; overflow: hidden; }
+.arena { position: relative; width: 100%; height: 280px; overflow: hidden; --spd: 1; --attr: #d0d4dc; color: #f4efe6; font-family: 'Noto Sans KR', sans-serif; }
+.arena.big { height: 100%; }
+.arena .cam { position: absolute; inset: 0; transition: transform calc(.35s * var(--spd)) cubic-bezier(.2, .8, .3, 1); transform-origin: 50% 70%; }
+.arena .cam.zoom { transform: scale(1.12); }
+.arena .floor { position: absolute; left: 0; right: 0; bottom: 0; height: 30%; background: linear-gradient(180deg, transparent, rgba(0, 0, 0, .55)); }
+
+/* 캐릭터 */
+.fighter { position: absolute; bottom: 12%; width: 128px; display: flex; flex-direction: column; align-items: center; z-index: 2;
   transition: left calc(.28s * var(--spd)) cubic-bezier(.2, .8, .3, 1), right calc(.28s * var(--spd)) cubic-bezier(.2, .8, .3, 1),
-    transform calc(.3s * var(--spd)), opacity calc(.3s * var(--spd)); z-index: 2; }
-.fighter.left { left: 5%; }
-.fighter.right { right: 5%; }
+    transform calc(.3s * var(--spd)), opacity calc(.3s * var(--spd)); }
+.arena.big .fighter { width: min(19vw, 40vh, 280px); bottom: 15%; }
+.fighter.left { left: 12%; }
+.fighter.right { right: 12%; }
 .fighter.enter.left { left: -30%; opacity: 0; }
 .fighter.enter.right { right: -30%; opacity: 0; }
-.fighter.lunge.left { left: 27%; }
-.fighter.lunge.right { right: 27%; }
-.fighter.dash.left { left: calc(95% - 256px); }
-.fighter.strike.left { left: 42%; z-index: 3; }
-.fighter.strike.right { right: 42%; z-index: 3; }
-.fighter.hurt.left { left: 1%; }
-.fighter.hurt.right { right: 1%; }
-.fighter.recoil.left { left: 12%; }
-.fighter.recoil.right { right: 12%; }
+.fighter.lunge.left { left: 30%; }
+.fighter.lunge.right { right: 30%; }
+.fighter.dash.left { left: calc(88% - 2 * var(--fw, 128px)); }
+.arena.big .fighter.dash.left { left: 52%; }
+.fighter.strike.left { left: 44%; z-index: 3; }
+.fighter.strike.right { right: 44%; z-index: 3; }
+.fighter.hurt.left { left: 3%; }
+.fighter.hurt.right { right: 6%; }
+.fighter.recoil.left { left: 18%; }
+.fighter.recoil.right { right: 18%; }
 
-.f-body { width: 110px; height: 146px; animation: bob calc(1.6s) ease-in-out infinite; }
-.f-body.flip { transform: scaleX(-1); }
-.f-body.flip { animation-name: bobflip; }
+.f-body { width: 100%; aspect-ratio: 120 / 160; max-height: 64%; animation: bob 1.6s ease-in-out infinite; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .6)); }
+.arena:not(.big) .f-body { width: 104px; }
+.f-body.flip { transform: scaleX(-1); animation-name: bobflip; }
 @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
 @keyframes bobflip { 0%, 100% { transform: scaleX(-1) translateY(0); } 50% { transform: scaleX(-1) translateY(-3px); } }
-.fighter.lunge .f-body, .fighter.dash .f-body { animation: none; transform: rotate(6deg) translateY(2px); }
-.fighter.lunge .f-body.flip, .fighter.dash .f-body.flip { transform: scaleX(-1) rotate(6deg) translateY(2px); }
-/* 무기 휘두르기 */
+.fighter.lunge .f-body, .fighter.dash .f-body { animation: none; transform: rotate(7deg) translateY(2px); }
+.fighter.lunge .f-body.flip, .fighter.dash .f-body.flip { transform: scaleX(-1) rotate(7deg) translateY(2px); }
 .fighter.swing .arm-front { animation: swing calc(.32s * var(--spd)) ease-out forwards; }
 @keyframes swing { 0% { transform: rotate(-80deg); } 60% { transform: rotate(60deg); } 100% { transform: rotate(40deg); } }
 .fighter.guard .arm-front { transform: rotate(-20deg) translateX(-6px); }
-/* 피격 */
 .fighter.hurt .f-body { animation: hurt calc(.45s * var(--spd)) ease-out forwards; }
 .fighter.hurt .f-body.flip { animation-name: hurtflip; }
 @keyframes hurt {
   0% { transform: rotate(0); filter: none; }
-  20% { transform: translateX(-10px) rotate(-14deg); filter: brightness(1.8) drop-shadow(0 0 6px #ff3b30); }
+  20% { transform: translateX(-12px) rotate(-14deg); filter: brightness(2) drop-shadow(0 0 8px #ff3b30); }
   100% { transform: translateX(-4px) rotate(-8deg); filter: saturate(.7); }
 }
 @keyframes hurtflip {
   0% { transform: scaleX(-1); filter: none; }
-  20% { transform: scaleX(-1) translateX(-10px) rotate(-14deg); filter: brightness(1.8) drop-shadow(0 0 6px #ff3b30); }
+  20% { transform: scaleX(-1) translateX(-12px) rotate(-14deg); filter: brightness(2) drop-shadow(0 0 8px #ff3b30); }
   100% { transform: scaleX(-1) translateX(-4px) rotate(-8deg); filter: saturate(.7); }
 }
 
-.f-name { font-size: 12px; font-weight: 700; white-space: nowrap; margin-top: 2px; }
-.f-cards { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px; max-width: 150px; min-height: 14px; }
-.f-cards span { font-size: 10px; color: var(--muted); white-space: nowrap; }
-.f-coins { display: flex; gap: 3px; min-height: 22px; flex-wrap: wrap; justify-content: center; max-width: 150px; }
-.f-coins .flip-in { animation: coinflip calc(.3s * var(--spd)) ease-out; }
-@keyframes coinflip { 0% { transform: translateY(14px) rotateY(0) scale(.4); opacity: 0; } 60% { transform: translateY(-6px) rotateY(540deg) scale(1.15); opacity: 1; } 100% { transform: rotateY(720deg) scale(1); } }
-.f-pow { font-family: 'Noto Serif KR', serif; font-weight: 900; font-size: 30px; line-height: 1; min-height: 30px; text-shadow: var(--float-shadow); }
-.f-pow.bump { animation: bump calc(.22s * var(--spd)); }
-@keyframes bump { 50% { transform: scale(1.35); color: var(--gold); } }
-.f-pow.win { color: var(--gold); text-shadow: 0 0 14px #d9a54aaa; transform: scale(1.2); }
-.f-pow.lose { color: var(--muted); text-decoration: line-through; }
+/* 발밑 키워드 아이콘 줄 */
+.f-status { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 8px; margin-top: 4px; max-width: 220px; }
+.si { display: inline-flex; align-items: baseline; gap: 1px; font-size: 13px; text-shadow: 0 1px 2px #000; }
+.si b { font-family: 'Noto Serif KR', serif; font-weight: 900; font-size: 15px; color: #fff; }
+.si small { font-size: 10px; color: #cfc8d6; margin-left: 1px; }
+.si.bad b { color: #ffb4a8; }
+.si.good b { color: #a8e6ff; }
+.si.sp b { color: #ffe08a; }
+.arena:not(.big) .si { font-size: 10px; } .arena:not(.big) .si b { font-size: 11px; }
 
-/* 충돌 불꽃 */
-.impact { position: absolute; left: 50%; top: 52%; width: 10px; height: 10px; transform: translate(-50%, -50%) scale(0); border-radius: 50%; z-index: 4; pointer-events: none;
-  background: radial-gradient(circle, #fff 0%, #ffe9a8 25%, #ff9d4a 45%, transparent 70%); }
-.impact.on-def { left: 70%; }
+/* 대상 이름판 + HP */
+.f-plate { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 6px; margin-top: 4px; min-width: 140px; padding: 3px 8px;
+  background: linear-gradient(90deg, rgba(0, 0, 0, .75), rgba(0, 0, 0, .35)); border-left: 3px solid #e0433b; }
+.f-plate b { font-size: 13px; white-space: nowrap; }
+.f-plate .stag { font-size: 11px; color: #ff6b5f; font-weight: 700; }
+.f-plate .hp { grid-column: 1 / -1; height: 6px; background: #2a0d0d; position: relative; }
+.f-plate .hp i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #8f1f1a, #ff4a3d); transition: width .1s; }
+.f-plate .hpn { position: absolute; right: 8px; top: -16px; font-family: 'Noto Serif KR', serif; font-weight: 900; font-size: 18px; color: #ff6b5f; text-shadow: 0 1px 3px #000; }
+.f-plate { position: relative; }
+.arena:not(.big) .f-plate { min-width: 100px; }
+
+/* 스킬 배너 */
+.skill { position: absolute; z-index: 9; display: flex; flex-direction: column; gap: 3px; opacity: 0; transition: opacity calc(.2s * var(--spd)), transform calc(.25s * var(--spd)); pointer-events: none; }
+.arena.on .skill { opacity: 1; }
+.skill.sk-a { left: 4%; top: 12%; align-items: flex-start; transform: translateX(-30px); }
+.skill.sk-d { right: 4%; top: 30%; align-items: flex-end; transform: translateX(30px); }
+.arena.on .skill.sk-a, .arena.on .skill.sk-d { transform: none; }
+.sk-row { display: flex; align-items: center; }
+.sk-name { background: linear-gradient(90deg, #ffd23f, #ffb02e 70%, #ff8a1f); color: #1b1206; font-weight: 900; font-size: clamp(14px, 2.2vw, 26px);
+  padding: 4px 22px 4px 16px; clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%); white-space: nowrap; max-width: 46vw; overflow: hidden; text-overflow: ellipsis;
+  box-shadow: 0 0 18px #ffb02e66; letter-spacing: -.01em; }
+.sk-d .sk-name { background: linear-gradient(270deg, #8fc4ff, #5a8fd8 70%, #3a63b0); color: #fff; clip-path: polygon(14px 0, 100% 0, 100% 100%, 0 100%); padding: 4px 16px 4px 22px; }
+.sk-badge { position: relative; width: clamp(54px, 6.5vw, 86px); aspect-ratio: 1; display: flex; align-items: center; justify-content: center; margin-left: -10px; z-index: 1;
+  clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0 50%);
+  background: radial-gradient(circle at 40% 35%, #fff6c9, #ffd23f 45%, #c98a12); }
+.sk-badge::after { content: ''; position: absolute; inset: 4px; clip-path: inherit; background: radial-gradient(circle at 50% 40%, #3a2a10, #120c04); }
+.sk-badge.def { background: radial-gradient(circle at 40% 35%, #e6f2ff, #8fc4ff 45%, #3a63b0); margin-left: 0; margin-right: -10px; }
+.sk-badge.def::after { background: radial-gradient(circle at 50% 40%, #142238, #060a12); }
+.sk-pow { position: relative; z-index: 1; font-family: 'Noto Serif KR', serif; font-weight: 900; font-size: clamp(22px, 3.2vw, 42px); color: #fff; text-shadow: 0 0 10px #ffd23f; line-height: 1; }
+.sk-d .sk-pow { text-shadow: 0 0 10px #8fc4ff; }
+.sk-pow.bump { animation: bump calc(.22s * var(--spd)); }
+@keyframes bump { 50% { transform: scale(1.35); } }
+.sk-bonus { position: absolute; top: -2px; left: 50%; transform: translateX(-50%); z-index: 2; font-weight: 900; font-size: 12px; color: #ffe08a; text-shadow: 0 1px 2px #000; }
+.sk-pips { display: flex; gap: 5px; padding-left: 8px; }
+.sk-d .sk-pips { padding-left: 0; padding-right: 8px; }
+.sk-pips i { width: 11px; height: 11px; border-radius: 50%; border: 2px solid #ffd23f; background: transparent; transition: background .1s, transform .1s; }
+.sk-d .sk-pips i { border-color: #8fc4ff; }
+.sk-pips i.h { background: #ffd23f; box-shadow: 0 0 8px #ffd23f; transform: scale(1.15); }
+.sk-d .sk-pips i.h { background: #8fc4ff; box-shadow: 0 0 8px #8fc4ff; }
+.sk-pips i.r { box-shadow: 0 0 0 2px #ff9d4a, 0 0 8px #ff9d4a; }
+.sk-pips i.t { background: #333; border-color: #555; opacity: .6; }
+.sk-lines { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.sk-line { font-size: clamp(11px, 1.15vw, 14px); padding: 3px 12px 3px 10px; background: linear-gradient(90deg, rgba(0, 0, 0, .78), rgba(0, 0, 0, .45));
+  border-left: 2px solid #7dff9a; white-space: nowrap; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; opacity: 0; transform: translateX(-16px);
+  animation: lineIn calc(.25s * var(--spd)) ease-out forwards; }
+@keyframes lineIn { to { opacity: 1; transform: none; } }
+.arena:not(.big) .sk-line { font-size: 10px; padding: 1px 8px; }
+.arena:not(.big) .sk-lines { display: none; }
+.skill.win .sk-name { filter: brightness(1.15); box-shadow: 0 0 26px #ffd23f; }
+.skill.lose { opacity: .45 !important; filter: grayscale(.6); }
+.skill.lose .sk-pow { text-decoration: line-through; }
+
+/* 충돌 섬광 */
+.impact { position: absolute; left: 50%; top: 55%; width: 10px; height: 10px; transform: translate(-50%, -50%) scale(0); border-radius: 50%; z-index: 4; pointer-events: none;
+  background: radial-gradient(circle, #fff 0%, #fff3c9 25%, #ffb02e 45%, transparent 70%); }
+.impact.on-def { left: 68%; }
 .impact.show { animation: spark calc(.5s * var(--spd)) ease-out forwards; }
 .impact.block { background: radial-gradient(circle, #fff 0%, #a8d4ff 30%, #59a8ff 50%, transparent 70%); }
 @keyframes spark {
   0% { transform: translate(-50%, -50%) scale(0); opacity: 1; }
-  30% { transform: translate(-50%, -50%) scale(14); opacity: 1; }
-  100% { transform: translate(-50%, -50%) scale(20); opacity: 0; }
+  30% { transform: translate(-50%, -50%) scale(16); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(24); opacity: 0; }
 }
-.impact.show::before, .impact.show::after { content: ''; position: absolute; left: 50%; top: 50%; width: 1px; height: 6px; background: #fff;
-  transform: translate(-50%, -50%) rotate(45deg); box-shadow: 0 0 2px #fff; }
-.impact.show::after { transform: translate(-50%, -50%) rotate(-45deg); }
-#stage.shake { animation: stshake calc(.3s * var(--spd, 1)); }
-@keyframes stshake { 20% { transform: translate(-6px, 2px); } 40% { transform: translate(5px, -3px); } 60% { transform: translate(-3px, 2px); } 80% { transform: translate(2px, -1px); } }
 
-.arena:has(.clash-banner.show) .arena-title { opacity: 0; }
-.clash-banner { position: absolute; left: 0; right: 0; top: 0; text-align: center; font-family: 'Noto Serif KR', serif; font-weight: 900;
-  font-size: 22px; color: var(--gold); opacity: 0; transform: scale(.6); transition: opacity calc(.2s * var(--spd)), transform calc(.2s * var(--spd)); z-index: 5; text-shadow: var(--float-shadow); }
+/* 금색 지그재그 선 */
+.burst { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 5; pointer-events: none; opacity: 0; }
+.burst polyline, .burst line { fill: none; stroke: #ffe7a8; stroke-width: .35; vector-effect: non-scaling-stroke; stroke-width: 2; filter: drop-shadow(0 0 3px #ffd23f);
+  stroke-dasharray: 400; stroke-dashoffset: 400; }
+.burst .vline { stroke-width: 1.5; opacity: .7; }
+.arena.burst-on .burst { animation: burstFade calc(1.1s * var(--spd)) ease-out forwards; }
+.arena.burst-on .burst polyline, .arena.burst-on .burst line { animation: draw calc(.45s * var(--spd)) ease-out forwards; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes burstFade { 0% { opacity: 1; } 70% { opacity: .8; } 100% { opacity: 0; } }
+
+/* 사선 레터박스 + 금빛 테두리 */
+.lbox { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 7; pointer-events: none; }
+.lbox .lb-fill { fill: #000; opacity: .88; }
+.lbox .lb-gold { fill: none; stroke: url(#lbGold); stroke-width: 7; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 6px #ffcf7a); stroke-linecap: round; }
+.lbox .lb-gold.thin { stroke-width: 2; opacity: .8; }
+.arena:not(.big) .lbox .lb-gold { stroke-width: 3; }
+.arena:not(.big) .lbox .lb-gold.thin { stroke-width: 1; }
+
+/* TOTAL 피해 */
+.total { position: absolute; left: 3%; bottom: 4%; z-index: 8; display: flex; align-items: flex-end; gap: 6px; transform: rotate(-8deg); transform-origin: left bottom; }
+.total.none { display: none; }
+.total small { font-family: 'Noto Serif KR', serif; font-weight: 900; font-size: clamp(11px, 1.3vw, 18px); letter-spacing: .1em; color: #ffe7a8; margin-bottom: .6em; }
+.total b { font-family: 'Noto Serif KR', serif; font-weight: 900; font-style: italic; font-size: clamp(34px, 7vw, 96px); line-height: .9;
+  background: linear-gradient(180deg, #fff8dc, #ffd23f 55%, #b8862f); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 3px 0 #3a2a10) drop-shadow(0 0 12px #ffb02e88); }
+.arena:not(.big) .total b { font-size: 34px; }
+
+/* 순서 사슬 */
+.chain { position: absolute; left: 50%; bottom: 3%; transform: translateX(-50%); z-index: 8; display: flex; align-items: center; }
+.chain .ch { width: clamp(34px, 4.2vw, 56px); aspect-ratio: 1; display: inline-flex; clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0 50%);
+  background: #2a2630; padding: 3px; }
+.chain .ch .char-svg { border-radius: 0; background: #141218; clip-path: inherit; }
+.chain .ch.atk { background: linear-gradient(135deg, #fff3c9, #ffb02e); transform: scale(1.18); }
+.chain .ch.def { background: linear-gradient(135deg, #ffb4a8, #e0433b); }
+.chain .ch.dead { filter: grayscale(1); opacity: .4; }
+.chain .link { width: clamp(10px, 1.6vw, 24px); height: 4px; background: repeating-linear-gradient(90deg, #e0603b 0 5px, transparent 5px 8px); }
+.arena:not(.big) .chain { display: none; }
+
+/* 상단 정보 / 결과 문구 */
+.who { position: absolute; top: 2.5%; left: 50%; transform: translateX(-50%); z-index: 8; font-size: clamp(11px, 1.2vw, 14px); color: #d9cfe0; letter-spacing: .05em;
+  text-shadow: 0 1px 3px #000; white-space: nowrap; }
+.clash-banner { position: absolute; left: 0; right: 0; top: 40%; text-align: center; font-family: 'Noto Serif KR', serif; font-weight: 900; z-index: 9;
+  font-size: clamp(20px, 3.6vw, 48px); color: #ffe7a8; opacity: 0; transform: scale(1.6); letter-spacing: .05em;
+  transition: opacity calc(.18s * var(--spd)), transform calc(.18s * var(--spd)); text-shadow: 0 0 18px #ffb02e, 0 3px 0 #3a2a10; pointer-events: none; }
 .clash-banner.show { opacity: 1; transform: scale(1); }
+.skip { position: absolute; right: 2%; bottom: 2%; z-index: 9; font-size: 11px; color: #ffffff66; }
 
 @media (max-width: 760px) {
-  .arena { height: 210px; }
+  .arena { height: 230px; }
   .fighter { width: 96px; }
-  .f-body { width: 80px; height: 106px; }
-  .f-pow { font-size: 22px; min-height: 22px; }
-  .fighter.dash.left { left: calc(95% - 192px); }
-  .fighter.lunge.left { left: 18%; }
-  .fighter.lunge.right { right: 18%; }
+  .arena:not(.big) .f-body { width: 78px; }
+  .fighter.lunge.left { left: 22%; }
+  .fighter.lunge.right { right: 22%; }
   .fighter.strike.left { left: 36%; }
   .fighter.strike.right { right: 36%; }
+  .arena.big .fighter { width: min(30vw, 38vh); }
+  .arena.big .sk-lines { display: none; }
+  .sk-name { max-width: 60vw; }
+  .who { display: none; }
 }
 
 /* ---------- 꾸미기 화면 ---------- */
@@ -117,7 +216,8 @@
 .ce-stage { height: 280px; display: flex; align-items: flex-end; justify-content: center; position: relative;
   background: radial-gradient(circle at 50% 70%, var(--stage-glow), var(--bg2) 70%); border-radius: 10px; }
 .ce-stage .ce-fighter { position: relative; width: 180px; bottom: 6px; --spd: 1; }
-.ce-stage .ce-fighter .f-body { width: 170px; height: 226px; }
+.ce-stage .ce-fighter .f-body { width: 170px; max-height: none; }
+.ce-fighter .f-name { font-size: 13px; font-weight: 700; }
 .ce-fighter.swing .arm-front { animation: swing .5s ease-out infinite alternate; }
 .ce-fighter.hurt .f-body { animation: hurt .6s ease-out infinite alternate; }
 .ce-fighter.guard .arm-front { transform: rotate(-20deg) translateX(-6px); }

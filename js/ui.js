@@ -561,6 +561,10 @@ function applyTheme(t) {
 
 function initUI() {
   applyTheme(currentTheme());
+  const cineBtn = $('#btn-cine');
+  const cineLabel = () => { cineBtn.textContent = cineMode() === 'full' ? '🎬 전체 화면' : '🎬 무대 안'; };
+  cineLabel();
+  cineBtn.onclick = () => { setCineMode(cineMode() === 'full' ? 'inline' : 'full'); cineLabel(); toast(cineMode() === 'full' ? '전투 연출: 전체 화면' : '전투 연출: 무대 안'); };
   $$('.theme-toggle').forEach((b) => (b.onclick = () => applyTheme(currentTheme() === 'light' ? 'dark' : 'light')));
   try { $('#in-name').value = localStorage.getItem('af_name') || ''; } catch { /* 무시 */ }
   const s = loadStats();
