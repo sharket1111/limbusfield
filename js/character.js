@@ -215,15 +215,36 @@ function cineMode() {
 function setCineMode(m) { try { localStorage.setItem('af_cine', m); } catch { /* 무시 */ } }
 
 // 키워드 아이콘 줄 (캐릭터 발밑)
-function statusIcons(p) {
+function statusIcons(p, withSp = true) {
   const out = [];
   for (const [k, v] of Object.entries(p.status || {})) {
     if (!v || v.cnt <= 0 || !KEYWORDS[k]) continue;
     const kw = KEYWORDS[k];
     out.push(`<span class="si ${kw.debuff ? 'bad' : 'good'}">${kw.icon}<b>${kw.countOnly ? v.cnt : v.pot}</b>${kw.countOnly ? '' : `<small>${v.cnt}</small>`}</span>`);
   }
-  out.push(`<span class="si sp">🧠<b>${p.sp}</b></span>`);
+  if (withSp) out.push(`<span class="si sp">🧠<b>${p.sp}</b></span>`);
   return out.join('');
+}
+
+// 캐릭터 발 밑: 원형 받침 + 큰 HP 숫자와 바 + 정신력 원 + 이름 + 키워드 아이콘
+//  내 캐릭터는 파랑, 다른 사람은 빨강
+function footHTML(p, opts = {}) {
+  const team = p.id === G.meId ? 'me' : 'foe';
+  const hpPct = Math.max(0, (p.hp / RULES.maxHp) * 100);
+  const stgPct = Math.max(0, (p.stg / RULES.staggerMax) * 100);
+  const staggered = opts.stag || (p.status && p.status.staggered && p.status.staggered.cnt > 0);
+  return `<div class="f-foot t-${team}">
+    <div class="ff-row">
+      <div class="ff-hp">
+        <b class="ff-hpn">${p.hp}</b>
+        <div class="ff-hpbar"><i style="width:${hpPct}%"></i></div>
+        <div class="ff-stg ${staggered ? 'broken' : ''}" title="흐트러짐 ${p.stg}"><i style="width:${stgPct}%"></i></div>
+      </div>
+      <div class="ff-sp ${p.sp < 0 ? 'neg' : ''}" title="정신력"><b>${p.sp}</b></div>
+    </div>
+    <div class="ff-name">${p.name}${staggered ? ' <span class="stag">💢 흐트러짐</span>' : ''}</div>
+    <div class="f-status">${statusIcons(p, false)}</div>
+  </div>`;
 }
 
 // 충돌 순간의 금색 지그재그 선
@@ -292,14 +313,12 @@ function renderClash(d) {
         <div class="street">${streetSVG()}<div class="rain"></div></div>
         <div class="floor"></div>
         <div class="fighter left enter">
-          <div class="f-body">${charSVG(A.look, { gear: d.gear, gearColor: attrColor })}</div>
-          <div class="f-status">${statusIcons(A)}</div>
+          <div class="f-fig"><div class="ff-base t-${A.id === G.meId ? 'me' : 'foe'}"></div><div class="f-body">${charSVG(A.look, { gear: d.gear, gearColor: attrColor })}</div></div>
+          ${footHTML(A)}
         </div>
         <div class="fighter right enter">
-          <div class="f-body flip">${charSVG(D.look, { gear: dGear, gearColor: armorColor })}</div>
-          <div class="f-plate"><b>${D.name}</b>${d.stag ? '<span class="stag">💢 흐트러짐</span>' : ''}
-            <div class="hp"><i style="width:${Math.max(0, (D.hp / RULES.maxHp) * 100)}%"></i></div><span class="hpn">${D.hp}</span></div>
-          <div class="f-status">${statusIcons(D)}</div>
+          <div class="f-fig"><div class="ff-base t-${D.id === G.meId ? 'me' : 'foe'}"></div><div class="f-body flip">${charSVG(D.look, { gear: dGear, gearColor: armorColor })}</div></div>
+          ${footHTML(D, { stag: d.stag })}
         </div>
         <div class="impact"></div>
       </div>
@@ -363,11 +382,13 @@ function renderClash(d) {
       if (!live()) return;
       const k = Math.min(1, (t - t0) / dur);
       totalEl.textContent = Math.round(total * k);
-      if (d.dmgTo === 'd') {
-        const hpLeft = Math.max(0, D.hp - Math.round(total * k));
-        const bar = $('.f-plate .hp i', ar), num = $('.f-plate .hpn', ar);
+      if (d.dmgTo) {
+        const who = d.dmgTo === 'd' ? D : A;
+        const f = d.dmgTo === 'd' ? fd : fa;
+        const hpLeft = Math.max(0, who.hp - Math.round(total * k));
+        const bar = $('.ff-hpbar i', f), num = $('.ff-hpn', f);
         if (bar) bar.style.width = `${(hpLeft / RULES.maxHp) * 100}%`;
-        if (num) num.textContent = hpLeft;
+        if (num) { num.textContent = hpLeft; num.classList.add('hit'); }
       }
       if (k < 1) requestAnimationFrame(step);
     };

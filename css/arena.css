@@ -265,3 +265,51 @@
 .c-stat.def.k-counter { color: #c8306a; }
 html[data-theme="light"] .c-stat.def.k-evade { color: #1d7a6b; }
 html[data-theme="light"] .c-stat.def.k-counter { color: #a8204f; }
+
+/* ---------- 캐릭터 발 밑 정보 (받침 + HP + 정신력) ---------- */
+.f-fig { position: relative; width: 100%; display: flex; justify-content: center; }
+.f-fig .f-body { position: relative; z-index: 1; }
+.ff-base { position: absolute; left: 50%; bottom: 1%; width: 82%; aspect-ratio: 4 / 1; transform: translateX(-50%); border-radius: 50%; z-index: 0; pointer-events: none;
+  border: 2px solid rgba(110, 182, 255, .85); background: radial-gradient(ellipse at center, rgba(110, 182, 255, .28), rgba(110, 182, 255, .06) 65%, transparent 72%);
+  box-shadow: 0 0 14px rgba(110, 182, 255, .55), inset 0 0 10px rgba(110, 182, 255, .45); }
+.ff-base::after { content: ''; position: absolute; inset: 18% 14%; border-radius: 50%; border: 1px dashed rgba(255, 255, 255, .35); }
+.ff-base.t-foe { border-color: rgba(255, 90, 74, .85); background: radial-gradient(ellipse at center, rgba(255, 90, 74, .28), rgba(255, 90, 74, .06) 65%, transparent 72%);
+  box-shadow: 0 0 14px rgba(255, 90, 74, .55), inset 0 0 10px rgba(255, 90, 74, .45); }
+
+.f-foot { display: flex; flex-direction: column; align-items: center; gap: 1px; margin-top: -4px; position: relative; z-index: 2; }
+.ff-row { display: flex; align-items: center; gap: 7px; }
+.ff-hp { display: flex; flex-direction: column; align-items: flex-end; }
+.ff-hpn { font-family: 'Noto Serif KR', serif; font-weight: 900; font-style: italic; font-size: clamp(20px, 2.6vw, 36px); line-height: .95; transform: skewX(-8deg);
+  color: #7ec4ff; text-shadow: 0 0 10px #2a7fff, 0 2px 2px #000; letter-spacing: -.02em; }
+.t-foe .ff-hpn { color: #ff6a5a; text-shadow: 0 0 10px #e0433b, 0 2px 2px #000; }
+.ff-hpn.hit { animation: hpflash .25s ease-out; }
+@keyframes hpflash { 50% { color: #fff; transform: skewX(-8deg) scale(1.15); } }
+.ff-hpbar, .ff-stg { width: clamp(64px, 8vw, 116px); position: relative; overflow: hidden; transform: skewX(-28deg); background: rgba(0, 0, 0, .65); }
+.ff-hpbar { height: 7px; border: 1px solid rgba(255, 255, 255, .18); margin-top: 2px; }
+.ff-hpbar i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #2a6fd1, #8fd0ff); transition: width .08s; }
+.t-foe .ff-hpbar i { background: linear-gradient(90deg, #a8231d, #ff6a5a); }
+.ff-hpbar::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 7px, rgba(0, 0, 0, .55) 7px 8px); }
+.ff-stg { height: 3px; margin-top: 2px; }
+.ff-stg i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #8a6a2a, #ffd23f); }
+.ff-stg.broken i { background: #ff3b30; width: 100% !important; animation: alarmbar .5s steps(2) infinite; }
+@keyframes alarmbar { 50% { opacity: .3; } }
+.ff-sp { width: clamp(28px, 3vw, 42px); aspect-ratio: 1; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  border: 2px solid #ffd23f; background: radial-gradient(circle at 40% 35%, #3a3020, #0d0b08 70%); box-shadow: 0 0 10px rgba(255, 210, 63, .45), inset 0 0 6px rgba(255, 210, 63, .35); }
+.ff-sp b { font-family: 'Noto Serif KR', serif; font-weight: 900; font-size: clamp(11px, 1.3vw, 16px); color: #fff3c9; text-shadow: 0 1px 2px #000; }
+.ff-sp.neg { border-color: #b16bff; background: radial-gradient(circle at 40% 35%, #2c1c3a, #0b0810 70%); box-shadow: 0 0 10px rgba(177, 107, 255, .45), inset 0 0 6px rgba(177, 107, 255, .35); }
+.ff-sp.neg b { color: #e6d0ff; }
+.ff-name { font-size: clamp(11px, 1.1vw, 14px); font-weight: 700; color: #fff; text-shadow: 0 1px 3px #000, 0 0 6px #000; white-space: nowrap; }
+.ff-name .stag { color: #ff6b5f; font-size: .85em; }
+.f-foot .f-status { margin-top: 1px; }
+
+.arena:not(.big) .f-fig .f-body { width: 96px; }
+.arena:not(.big) .ff-hpn { font-size: 18px; }
+.arena:not(.big) .ff-hpbar, .arena:not(.big) .ff-stg { width: 58px; }
+.arena:not(.big) .ff-sp { width: 24px; }
+.arena:not(.big) .ff-sp b { font-size: 10px; }
+.arena:not(.big) .ff-name { font-size: 10px; }
+.arena:not(.big) .fighter { bottom: 6%; }
+@media (max-width: 760px) {
+  .arena:not(.big) .f-fig .f-body { width: 70px; }
+  .arena:not(.big) .f-foot .f-status { display: none; }
+}
