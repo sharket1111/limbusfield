@@ -556,13 +556,14 @@ async function resolveHit(attacker, target, info) {
 
   // 무효화: 합 없이 막음
   if (armors.some((x) => hasFx(x, 'nullify'))) {
-    showClash(attacker, info, null, null, target, armors, null, null, 'nullify');
+    const ms = showClash(attacker, info, null, null, target, armors, null, null, 'nullify');
     log(`${pname(target)} ${armors.map(cname).join(' + ')} 🛑 공격을 무효화했습니다!`);
+    renderAll();
+    await sleep(ms);
     floatText(target, '무효', 'block');
     changeSp(target, 5, true);
     changeSp(attacker, -3, true);
     renderAll();
-    await sleep(900);
     return;
   }
 
@@ -570,10 +571,10 @@ async function resolveHit(attacker, target, info) {
   const pa = info.atk + coinSum(ca);
 
   if (!armors.length) {
-    showClash(attacker, info, ca, pa, target, [], null, null, 'open');
+    const ms = showClash(attacker, info, ca, pa, target, [], null, null, 'open');
     log(`${pname(attacker)} 위력 <b>${pa}</b> ${coinsHTML(ca)} → ${pname(target)} 무방비${pierce ? ' (관통)' : ''}`);
     renderAll();
-    await sleep(800);
+    await sleep(ms);
     landHit(attacker, target, pa, info, ca);
     return;
   }
@@ -583,10 +584,10 @@ async function resolveHit(attacker, target, info) {
   const def = armorDef(target, armors);
   const pd = def + coinSum(cd);
   const result = pa > pd ? 'atk' : pd > pa ? 'def' : 'tie';
-  showClash(attacker, info, ca, pa, target, armors, cd, pd, result);
+  const ms = showClash(attacker, info, ca, pa, target, armors, cd, pd, result);
   log(`⚔ 합! ${pname(attacker)} <b>${pa}</b> ${coinsHTML(ca)} vs ${coinsHTML(cd)} <b>${pd}</b> ${pname(target)} ${armors.map(cname).join(' + ')}`);
   renderAll();
-  await sleep(1200);
+  await sleep(ms);
 
   // 방어구 코인: 앞면이면 효과
   for (const r of cd) if (r.head) applyEffects((r.coin.fx || []).filter((e) => e.when === 'heads'), target, attacker);
@@ -613,29 +614,21 @@ async function resolveHit(attacker, target, info) {
   }
 }
 
+// 2D 합 연출: 데이터를 만들어 이 화면에서 재생하고, 참가자에게도 보냄. 연출 길이(ms) 반환
 function showClash(attacker, info, ca, pa, target, armors, cd, pd, result) {
-  const aSide = `
-    <div class="clash-side">
-      <div>${pname(attacker)}</div>
-      <div class="stage-cards">${info.cards.map((c) => cardHTML(c, { big: true })).join('')}</div>
-      ${ca ? `<div class="coins">${coinsHTML(ca)}</div>
-      <div class="clash-pow ${result === 'atk' || result === 'open' ? 'win' : result === 'def' ? 'lose' : ''}">${pa}</div>` : ''}
-    </div>`;
-  let dSide;
-  if (result === 'open') {
-    dSide = `<div class="clash-side"><div>${pname(target)}</div><div class="open-guard">${has(target, 'staggered') ? '💢 흐트러짐' : '무방비'}</div></div>`;
-  } else {
-    dSide = `
-      <div class="clash-side">
-        <div>${pname(target)}</div>
-        <div class="stage-cards">${armors.map((c) => cardHTML(c, { big: true })).join('')}</div>
-        ${cd ? `<div class="coins">${coinsHTML(cd)}</div>
-        <div class="clash-pow ${result === 'def' ? 'win' : result === 'atk' ? 'lose' : ''}">${pd}</div>` : '<div class="clash-pow win">무효</div>'}
-      </div>`;
-  }
-  popStage(`
-    <div class="stage-head">${result === 'open' ? '⚔ 공격' : '⚔ <b>합</b> ⚔'}</div>
-    <div class="clash">${aSide}<div class="clash-vs">VS</div>${dSide}</div>`);
+  const mode = result === 'open' ? 'open' : result === 'nullify' ? 'nullify' : 'clash';
+  const pack = (rolls) => (rolls || []).map((r) => ({ h: r.head ? 1 : 0, p: r.power, r: r.reused || 0 }));
+  const d = validateClash({
+    aId: attacker.id, dId: target.id, mode, result,
+    aBase: info.atk, dBase: mode === 'clash' ? armorDef(target, armors) : 0,
+    aCoins: pack(ca), dCoins: pack(cd), pa: pa || 0, pd: pd || 0,
+    aCards: info.cards.map(cardRef), dCards: armors.map(cardRef),
+    gear: info.cards[0].type === 'ego' ? 'orb' : 'blade', attr: info.attr,
+    stag: has(target, 'staggered') ? 1 : 0, spd: G.speed,
+  });
+  renderClash(d);
+  netFx('clash', d);
+  return clashDuration(d);
 }
 
 // 피해 적중 공통 처리
@@ -1054,6 +1047,7 @@ function startMatch(cfg) {
   G.players = cfg.players.map((x, i) => {
     const p = makePlayer(i, x.name, x.avatar, x.ctrl);
     p.cid = x.cid;
+    p.look = normalizeLook(x.look) || randomLook(x.name);
     p.packName = x.pack ? x.pack.name : '';
     p.packDefs = x.pack && x.pack.cards.length ? nsCards(x.pack.cards, `p${i}`) : [];
     registerDefs(p.packDefs);

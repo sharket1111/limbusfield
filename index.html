@@ -16,6 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/arena.css">
 </head>
 <body>
   <!-- 타이틀 -->
@@ -65,6 +66,7 @@
         <button class="btn open-rules">규칙</button>
         <button class="btn" id="btn-gallery">카드 도감</button>
         <button class="btn" id="btn-workshop">🛠 카드 공방</button>
+        <button class="btn" id="btn-char">🎨 캐릭터 꾸미기</button>
       </div>
       <div id="custom-info" class="muted small"></div>
       <div id="stats" class="muted"></div>
@@ -151,6 +153,27 @@
         <button class="btn primary big" id="mp-start">게임 시작</button>
         <button class="btn" id="mp-leave">방 나가기</button>
       </div>
+    </div>
+  </section>
+
+  <!-- 캐릭터 꾸미기 -->
+  <section id="charedit" class="screen">
+    <header class="topbar">
+      <div class="brand">🎨 캐릭터 꾸미기</div>
+      <div class="muted small">합을 칠 때 무대에 나오는 내 캐릭터입니다. 멀티 플레이에서도 상대에게 보여요</div>
+      <div class="spacer"></div>
+      <button class="btn theme-toggle" title="다크 / 라이트 모드">🌙</button>
+      <button class="btn small" id="ce-back">← 타이틀</button>
+    </header>
+    <div class="ce-wrap">
+      <div class="ce-left">
+        <div id="ce-preview"></div>
+        <div class="ce-actions">
+          <button class="btn" id="ce-random">🎲 무작위</button>
+          <button class="btn primary" id="ce-save">💾 저장</button>
+        </div>
+      </div>
+      <div id="ce-form" class="ce-form"></div>
     </div>
   </section>
 
@@ -320,6 +343,7 @@
   <script src="js/ui.js"></script>
   <script src="js/ai.js"></script>
   <script src="js/editor.js"></script>
+  <script src="js/character.js"></script>
   <script src="js/net.js"></script>
 </body>
 </html>

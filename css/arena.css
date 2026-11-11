@@ -1,0 +1,140 @@
+/* ============================================================
+   2D 합 연출 + 캐릭터 꾸미기
+   ============================================================ */
+.char-svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.char-svg.bust { overflow: hidden; }
+.char-svg .arm-front { transform-origin: 84px 84px; transform-box: view-box; transition: transform .2s; }
+.char-svg .eye-glow, .char-svg .orb-glow { filter: drop-shadow(0 0 3px currentColor); }
+.char-svg .orb-glow { animation: orb 1.2s ease-in-out infinite alternate; }
+@keyframes orb { from { opacity: .25; } to { opacity: .6; } }
+
+/* 패널 초상화 */
+.opp-av .char-svg { width: 46px; height: 46px; border-radius: 50%; background: var(--bg2); border: 1px solid var(--line); }
+.mp-face .char-svg { width: 34px; height: 34px; border-radius: 50%; background: var(--bg2); border: 1px solid var(--line); }
+.mp-face { display: inline-flex; }
+@media (max-width: 760px) { .opp-av .char-svg { width: 32px; height: 32px; } }
+
+/* ---------- 무대 ---------- */
+#stage:has(.arena) { padding: 6px; }
+.arena { position: relative; width: 100%; height: 270px; overflow: hidden; --spd: 1; }
+.arena::after { content: ''; position: absolute; left: 4%; right: 4%; bottom: 22px; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--line), transparent); }
+.arena-title { position: absolute; top: 4px; left: 0; right: 0; text-align: center; font-family: 'Noto Serif KR', serif;
+  font-weight: 900; letter-spacing: .2em; color: var(--muted); font-size: 13px; }
+
+.fighter { position: absolute; bottom: 14px; width: 128px; display: flex; flex-direction: column; align-items: center;
+  transition: left calc(.28s * var(--spd)) cubic-bezier(.2, .8, .3, 1), right calc(.28s * var(--spd)) cubic-bezier(.2, .8, .3, 1),
+    transform calc(.3s * var(--spd)), opacity calc(.3s * var(--spd)); z-index: 2; }
+.fighter.left { left: 5%; }
+.fighter.right { right: 5%; }
+.fighter.enter.left { left: -30%; opacity: 0; }
+.fighter.enter.right { right: -30%; opacity: 0; }
+.fighter.lunge.left { left: 27%; }
+.fighter.lunge.right { right: 27%; }
+.fighter.dash.left { left: calc(95% - 256px); }
+.fighter.strike.left { left: 42%; z-index: 3; }
+.fighter.strike.right { right: 42%; z-index: 3; }
+.fighter.hurt.left { left: 1%; }
+.fighter.hurt.right { right: 1%; }
+.fighter.recoil.left { left: 12%; }
+.fighter.recoil.right { right: 12%; }
+
+.f-body { width: 110px; height: 146px; animation: bob calc(1.6s) ease-in-out infinite; }
+.f-body.flip { transform: scaleX(-1); }
+.f-body.flip { animation-name: bobflip; }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes bobflip { 0%, 100% { transform: scaleX(-1) translateY(0); } 50% { transform: scaleX(-1) translateY(-3px); } }
+.fighter.lunge .f-body, .fighter.dash .f-body { animation: none; transform: rotate(6deg) translateY(2px); }
+.fighter.lunge .f-body.flip, .fighter.dash .f-body.flip { transform: scaleX(-1) rotate(6deg) translateY(2px); }
+/* 무기 휘두르기 */
+.fighter.swing .arm-front { animation: swing calc(.32s * var(--spd)) ease-out forwards; }
+@keyframes swing { 0% { transform: rotate(-80deg); } 60% { transform: rotate(60deg); } 100% { transform: rotate(40deg); } }
+.fighter.guard .arm-front { transform: rotate(-20deg) translateX(-6px); }
+/* 피격 */
+.fighter.hurt .f-body { animation: hurt calc(.45s * var(--spd)) ease-out forwards; }
+.fighter.hurt .f-body.flip { animation-name: hurtflip; }
+@keyframes hurt {
+  0% { transform: rotate(0); filter: none; }
+  20% { transform: translateX(-10px) rotate(-14deg); filter: brightness(1.8) drop-shadow(0 0 6px #ff3b30); }
+  100% { transform: translateX(-4px) rotate(-8deg); filter: saturate(.7); }
+}
+@keyframes hurtflip {
+  0% { transform: scaleX(-1); filter: none; }
+  20% { transform: scaleX(-1) translateX(-10px) rotate(-14deg); filter: brightness(1.8) drop-shadow(0 0 6px #ff3b30); }
+  100% { transform: scaleX(-1) translateX(-4px) rotate(-8deg); filter: saturate(.7); }
+}
+
+.f-name { font-size: 12px; font-weight: 700; white-space: nowrap; margin-top: 2px; }
+.f-cards { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px; max-width: 150px; min-height: 14px; }
+.f-cards span { font-size: 10px; color: var(--muted); white-space: nowrap; }
+.f-coins { display: flex; gap: 3px; min-height: 22px; flex-wrap: wrap; justify-content: center; max-width: 150px; }
+.f-coins .flip-in { animation: coinflip calc(.3s * var(--spd)) ease-out; }
+@keyframes coinflip { 0% { transform: translateY(14px) rotateY(0) scale(.4); opacity: 0; } 60% { transform: translateY(-6px) rotateY(540deg) scale(1.15); opacity: 1; } 100% { transform: rotateY(720deg) scale(1); } }
+.f-pow { font-family: 'Noto Serif KR', serif; font-weight: 900; font-size: 30px; line-height: 1; min-height: 30px; text-shadow: var(--float-shadow); }
+.f-pow.bump { animation: bump calc(.22s * var(--spd)); }
+@keyframes bump { 50% { transform: scale(1.35); color: var(--gold); } }
+.f-pow.win { color: var(--gold); text-shadow: 0 0 14px #d9a54aaa; transform: scale(1.2); }
+.f-pow.lose { color: var(--muted); text-decoration: line-through; }
+
+/* 충돌 불꽃 */
+.impact { position: absolute; left: 50%; top: 52%; width: 10px; height: 10px; transform: translate(-50%, -50%) scale(0); border-radius: 50%; z-index: 4; pointer-events: none;
+  background: radial-gradient(circle, #fff 0%, #ffe9a8 25%, #ff9d4a 45%, transparent 70%); }
+.impact.on-def { left: 70%; }
+.impact.show { animation: spark calc(.5s * var(--spd)) ease-out forwards; }
+.impact.block { background: radial-gradient(circle, #fff 0%, #a8d4ff 30%, #59a8ff 50%, transparent 70%); }
+@keyframes spark {
+  0% { transform: translate(-50%, -50%) scale(0); opacity: 1; }
+  30% { transform: translate(-50%, -50%) scale(14); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(20); opacity: 0; }
+}
+.impact.show::before, .impact.show::after { content: ''; position: absolute; left: 50%; top: 50%; width: 1px; height: 6px; background: #fff;
+  transform: translate(-50%, -50%) rotate(45deg); box-shadow: 0 0 2px #fff; }
+.impact.show::after { transform: translate(-50%, -50%) rotate(-45deg); }
+#stage.shake { animation: stshake calc(.3s * var(--spd, 1)); }
+@keyframes stshake { 20% { transform: translate(-6px, 2px); } 40% { transform: translate(5px, -3px); } 60% { transform: translate(-3px, 2px); } 80% { transform: translate(2px, -1px); } }
+
+.arena:has(.clash-banner.show) .arena-title { opacity: 0; }
+.clash-banner { position: absolute; left: 0; right: 0; top: 0; text-align: center; font-family: 'Noto Serif KR', serif; font-weight: 900;
+  font-size: 22px; color: var(--gold); opacity: 0; transform: scale(.6); transition: opacity calc(.2s * var(--spd)), transform calc(.2s * var(--spd)); z-index: 5; text-shadow: var(--float-shadow); }
+.clash-banner.show { opacity: 1; transform: scale(1); }
+
+@media (max-width: 760px) {
+  .arena { height: 210px; }
+  .fighter { width: 96px; }
+  .f-body { width: 80px; height: 106px; }
+  .f-pow { font-size: 22px; min-height: 22px; }
+  .fighter.dash.left { left: calc(95% - 192px); }
+  .fighter.lunge.left { left: 18%; }
+  .fighter.lunge.right { right: 18%; }
+  .fighter.strike.left { left: 36%; }
+  .fighter.strike.right { right: 36%; }
+}
+
+/* ---------- 꾸미기 화면 ---------- */
+#charedit { flex-direction: column; min-height: 100vh; max-width: 1100px; margin: 0 auto; padding: 0 12px 24px; }
+.ce-wrap { display: grid; grid-template-columns: 340px 1fr; gap: 16px; margin-top: 14px; }
+.ce-left { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.ce-stage { height: 280px; display: flex; align-items: flex-end; justify-content: center; position: relative;
+  background: radial-gradient(circle at 50% 70%, var(--stage-glow), var(--bg2) 70%); border-radius: 10px; }
+.ce-stage .ce-fighter { position: relative; width: 180px; bottom: 6px; --spd: 1; }
+.ce-stage .ce-fighter .f-body { width: 170px; height: 226px; }
+.ce-fighter.swing .arm-front { animation: swing .5s ease-out infinite alternate; }
+.ce-fighter.hurt .f-body { animation: hurt .6s ease-out infinite alternate; }
+.ce-fighter.guard .arm-front { transform: rotate(-20deg) translateX(-6px); }
+.ce-poses { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+.btn.on { border-color: var(--gold); background: var(--ws-cur); }
+.ce-portrait { display: flex; align-items: center; gap: 10px; justify-content: center; }
+.ce-portrait .char-svg { width: 56px; height: 56px; border-radius: 50%; background: var(--bg2); border: 1px solid var(--line); }
+.ce-actions { display: flex; gap: 8px; justify-content: center; }
+.ce-form { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ce-row { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+.ce-label { width: 80px; font-size: 13px; font-weight: 700; padding-top: 6px; }
+.ce-opts { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.swatch { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--line); cursor: pointer; padding: 0; position: relative; }
+.swatch.on { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold); }
+.swatch.custom { display: inline-flex; align-items: center; justify-content: center; background: var(--bg2); font-size: 14px; overflow: hidden; }
+.swatch.custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+@media (max-width: 760px) {
+  .ce-wrap { grid-template-columns: 1fr; }
+  .ce-label { width: 100%; padding-top: 0; }
+}

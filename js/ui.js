@@ -106,7 +106,7 @@ function renderOpponents() {
   box.innerHTML = G.players.filter((p) => p.id !== G.meId).map((p) => `
     <div class="opp ${p.alive ? '' : 'dead'} ${G.players[G.current] === p && !G.over ? 'active' : ''}
       ${targeting && p.alive ? 'targetable' : ''} ${G.sel.target && G.sel.target.id === p.id ? 'targeted' : ''}" data-pid="${p.id}">
-      <div class="opp-av">${p.avatar}</div>
+      <div class="opp-av">${p.look ? portraitSVG(p.look) : p.avatar}</div>
       <div class="opp-info">
         <div class="opp-name"><span>${ctrlBadge(p)}${p.name}</span> <span class="st-row">${statusHTML(p)}</span></div>
         ${bar(p.hp, RULES.maxHp, 'hp')}
@@ -123,7 +123,7 @@ function renderMe() {
   const myTurn = !!G.humanResolve;
   $('#me').innerHTML = `
     <div class="me-card ${myTurn ? 'active' : ''} ${p.alive ? '' : 'dead'}" data-pid="${p.id}">
-      <div class="opp-av">${p.avatar}</div>
+      <div class="opp-av">${p.look ? portraitSVG(p.look) : p.avatar}</div>
       <div class="opp-info">
         <div class="opp-name">${p.name} <span class="st-row">${statusHTML(p)}</span></div>
         ${bar(p.hp, RULES.maxHp, 'hp')}
@@ -474,7 +474,7 @@ function enterGameScreen() {
   $('#log').innerHTML = '';
   clearStageLocal('');
   document.body.classList.remove('night');
-  for (const id of ['#title', '#multi', '#workshop']) $(id).classList.remove('show');
+  for (const id of ['#title', '#multi', '#workshop', '#charedit']) $(id).classList.remove('show');
   $('#result').classList.remove('show');
   $('#game').classList.add('show');
   $('#in-speed-game').value = String(G.speed);
@@ -510,7 +510,7 @@ function showMatchResult(winnerId) {
 }
 
 function showTitle() {
-  for (const id of ['#game', '#multi', '#workshop']) $(id).classList.remove('show');
+  for (const id of ['#game', '#multi', '#workshop', '#charedit']) $(id).classList.remove('show');
   $('#result').classList.remove('show');
   closeDialogs();
   document.body.classList.remove('night');
@@ -540,7 +540,7 @@ function startSolo() {
   const cpuN = +$('#in-cpu').value;
   const names = shuffle([...CPU_NAMES]);
   const avs = shuffle([...CPU_AVATARS]);
-  const players = [{ name, avatar: '🜲', ctrl: 'local', pack: deckMode === 'base' ? null : { name: pack.name, cards } }];
+  const players = [{ name, avatar: '🜲', ctrl: 'local', look: getLook(), pack: deckMode === 'base' ? null : { name: pack.name, cards } }];
   for (let i = 0; i < cpuN; i++) players.push({ name: names[i], avatar: avs[i], ctrl: 'cpu', pack: null });
   startMatch({ mode: 'solo', meId: 0, players, deckMode: deckMode === 'base' ? 'mixed' : deckMode,
     speed: +$('#in-speed').value, difficulty: $('#in-diff').value });
