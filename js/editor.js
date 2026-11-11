@@ -207,7 +207,7 @@ function effectRow(e, path, ctx) {
     ${pre ? '<span class="eff-fixed">던지기 전</span>' : `<select data-f="${path}.when">${whens.map((w) => `<option value="${w}" ${e.when === w ? 'selected' : ''}>${W[w]}</option>`).join('')}</select>`}
     ${pre ? '' : `<select data-f="${path}.target"><option value="enemy" ${e.target === 'enemy' ? 'selected' : ''}>${armor ? '공격자' : '상대'}</option><option value="self" ${e.target === 'self' ? 'selected' : ''}>자신</option></select>`}
     <select data-f="${path}.key">${keyOptions}</select>
-    ${d.kwSel ? `<select data-f="${path}.kw">${KW_SEL[d.kwSel].map((k) => `<option value="${k}" ${e.kw === k ? 'selected' : ''}>${kwName(k)}</option>`).join('')}</select>` : ''}
+    ${d.kwSel ? `<select data-f="${path}.kw">${KW_SEL[d.kwSel].map((k) => `<option value="${k}" ${e.kw === k ? 'selected' : ''}>${kwPlain(k)}</option>`).join('')}</select>` : ''}
     ${d.pot ? `<label>${d.potLabel || '위력'} <input type="number" data-f="${path}.pot" data-num value="${e.pot}" min="${d.signed ? -45 : 0}" max="99"></label>` : ''}
     ${d.cnt ? `<label>${d.cntLabel || '횟수'} <input type="number" data-f="${path}.cnt" data-num value="${e.cnt}" min="0" max="99"></label>` : ''}
     <button class="btn small del" data-act="del" data-path="${path}" title="삭제">✕</button>

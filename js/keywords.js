@@ -6,13 +6,13 @@
 'use strict';
 
 const KEYWORDS = {
-  burn:    { name: '화상', icon: '🔥', debuff: true,  desc: '턴 시작 시 위력만큼 피해를 받고 횟수 -1' },
-  bleed:   { name: '출혈', icon: '🩸', debuff: true,  desc: '공격할 때마다 위력만큼 피해를 받고 횟수 -1' },
-  tremor:  { name: '진동', icon: '〰', debuff: true,  desc: '「진동 폭발」을 당하면 위력만큼 흐트러짐 피해. 턴 종료 시 횟수 -1' },
-  rupture: { name: '파열', icon: '💥', debuff: true,  desc: '피격될 때마다 위력만큼 추가 피해를 받고 횟수 -1' },
-  sinking: { name: '침잠', icon: '🌊', debuff: true,  desc: '피격될 때마다 위력만큼 정신력 감소(정신력이 최저면 대신 그만큼 피해), 횟수 -1' },
-  poise:   { name: '호흡', icon: '🌬', debuff: false, desc: '공격 적중 시 위력×5% 확률로 치명타(피해 1.2배), 치명타가 나면 횟수 -1. 턴 종료 시 횟수 -1' },
-  charge:  { name: '충전', icon: '⚡', debuff: false, countOnly: true, max: 20, desc: '충전량(최대 20). 「충전 소모」 효과에 쓰입니다. 턴 종료 시 -1' },
+  burn:    { name: '화상', icon: '<i class="kwi kw-burn"></i>', emoji: '🔥', debuff: true,  desc: '턴 시작 시 위력만큼 피해를 받고 횟수 -1' },
+  bleed:   { name: '출혈', icon: '<i class="kwi kw-bleed"></i>', emoji: '🩸', debuff: true,  desc: '공격할 때마다 위력만큼 피해를 받고 횟수 -1' },
+  tremor:  { name: '진동', icon: '<i class="kwi kw-tremor"></i>', emoji: '〰', debuff: true,  desc: '「진동 폭발」을 당하면 위력만큼 흐트러짐 피해. 턴 종료 시 횟수 -1' },
+  rupture: { name: '파열', icon: '<i class="kwi kw-rupture"></i>', emoji: '💥', debuff: true,  desc: '피격될 때마다 위력만큼 추가 피해를 받고 횟수 -1' },
+  sinking: { name: '침잠', icon: '<i class="kwi kw-sinking"></i>', emoji: '🌊', debuff: true,  desc: '피격될 때마다 위력만큼 정신력 감소(정신력이 최저면 대신 그만큼 피해), 횟수 -1' },
+  poise:   { name: '호흡', icon: '<i class="kwi kw-poise"></i>', emoji: '🌬', debuff: false, desc: '공격 적중 시 위력×5% 확률로 치명타(피해 1.2배), 치명타가 나면 횟수 -1. 턴 종료 시 횟수 -1' },
+  charge:  { name: '충전', icon: '<i class="kwi kw-charge"></i>', emoji: '⚡', debuff: false, countOnly: true, max: 20, desc: '충전량(최대 20). 「충전 소모」 효과에 쓰입니다. 턴 종료 시 -1' },
   fragile: { name: '취약', icon: '💔', debuff: true,  countOnly: true, desc: '방어력 절반. 턴 종료 시 횟수 -1' },
   stun:    { name: '기절', icon: '💫', debuff: true,  countOnly: true, desc: '다음 턴을 건너뜀' },
   panic:   { name: '공황', icon: '😱', debuff: true,  countOnly: true, hidden: true, desc: '정신력 붕괴 — 다음 턴을 건너뜀' },
@@ -169,6 +169,33 @@ const KW_SEL = {
   burst: ['bleed', 'burn', 'rupture', 'sinking', 'tremor'],
 };
 const kwName = (k) => (KEYWORDS[k] ? KEYWORDS[k].icon + KEYWORDS[k].name : k);
+// 글자만 들어가는 곳(선택 상자 등)용
+const kwPlain = (k) => (KEYWORDS[k] ? (KEYWORDS[k].emoji || KEYWORDS[k].icon) + ' ' + KEYWORDS[k].name : k);
+const KW_ICON_KEYS = ['burn', 'bleed', 'tremor', 'rupture', 'sinking', 'poise', 'charge'];
+
+// ---- 이 기기에서만 쓰는 키워드 아이콘 그림 (localStorage, 다른 사람에게 보내지 않음) ----
+const KW_ICON_STORE = 'af_kw_icons';
+const KW_IMG_RE = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
+function getKwIcons() {
+  try {
+    const o = JSON.parse(localStorage.getItem(KW_ICON_STORE) || '{}');
+    const out = {};
+    for (const k of KW_ICON_KEYS) if (typeof o[k] === 'string' && KW_IMG_RE.test(o[k]) && o[k].length < 120000) out[k] = o[k];
+    return out;
+  } catch { return {}; }
+}
+function applyKwIcons() {
+  let st = document.getElementById('kw-custom');
+  if (!st) { st = document.createElement('style'); st.id = 'kw-custom'; document.head.appendChild(st); }
+  st.textContent = Object.entries(getKwIcons()).map(([k, url]) => `.kwi.kw-${k} { background-image: url("${url}") !important; }`).join('\n');
+}
+function saveKwIcon(k, url) {
+  const o = getKwIcons();
+  if (url) o[k] = url; else delete o[k];
+  try { localStorage.setItem(KW_ICON_STORE, JSON.stringify(o)); } catch { return false; }
+  applyKwIcons();
+  return true;
+}
 
 const WHEN_TEXT = { use: '사용 시', hit: '적중 시', heads: '앞면 적중 시' };
 const WHEN_TEXT_ARMOR = { use: '수비 시', hit: '수비 성공 시', heads: '앞면일 때' };
@@ -192,8 +219,8 @@ function effectText(e, armor = false) {
     return `[던지기 전] ${body}`;
   }
   let body;
-  if (KEYWORDS[e.key] && !KEYWORDS[e.key].countOnly) body = `${who}에게 ${KEYWORDS[e.key].name} ${e.pot || 0}/${e.cnt || 0}`;
-  else if (e.key === 'charge' || e.key === 'fragile') body = `${who}에게 ${KEYWORDS[e.key].name} ${e.cnt || 1}`;
+  if (KEYWORDS[e.key] && !KEYWORDS[e.key].countOnly) body = `${who}에게 ${kwName(e.key)} ${e.pot || 0}/${e.cnt || 0}`;
+  else if (e.key === 'charge' || e.key === 'fragile') body = `${who}에게 ${kwName(e.key)} ${e.cnt || 1}`;
   else if (e.key === 'stun') body = `${who} 기절`;
   else if (e.key === 'tremorBurst') body = `${who}에게 진동 폭발`;
   else if (e.key === 'stagger') body = `${who}에게 흐트러짐 피해 ${e.pot || 0}`;

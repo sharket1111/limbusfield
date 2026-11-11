@@ -20,6 +20,7 @@
   <link rel="stylesheet" href="css/frame.css">
   <link rel="stylesheet" href="css/card.css">
   <link rel="stylesheet" href="css/field.css">
+  <link rel="stylesheet" href="css/keywords.css">
 </head>
 <body>
   <div id="rotate-lock"><div class="rl-icon">📱↻</div><b>가로 모드로 돌려 주세요</b><span>Anomaly Field는 휴대폰에서 가로 화면으로만 플레이할 수 있습니다.</span></div>
@@ -74,6 +75,7 @@
         <button class="btn" id="btn-gallery">카드 도감</button>
         <button class="btn" id="btn-workshop">🛠 카드 공방</button>
         <button class="btn" id="btn-char">🎨 캐릭터 꾸미기</button>
+        <button class="btn" id="btn-kwicons">🔣 키워드 아이콘</button>
       </div>
       <div id="custom-info" class="muted small"></div>
       <div id="stats" class="muted"></div>
@@ -350,6 +352,15 @@
   </div>
 
   <!-- 도감 -->
+  <div id="kwicons" class="modal">
+    <div class="panel kwicons">
+      <h2>키워드 아이콘</h2>
+      <p class="muted small">기본 아이콘 대신 쓸 그림을 키워드마다 고를 수 있습니다. 고른 그림은 <b>이 브라우저에만</b> 저장되고, 다른 사람에게는 보내지 않습니다.</p>
+      <div id="kwicons-list"></div>
+      <div class="kwicons-btns"><button class="btn" id="kwicons-reset">모두 기본으로</button><button class="btn primary" id="kwicons-close">닫기</button></div>
+    </div>
+  </div>
+
   <div id="gallery" class="modal">
     <div class="panel gallery">
       <h2>카드 도감</h2>

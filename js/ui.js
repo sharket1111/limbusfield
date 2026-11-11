@@ -848,7 +848,61 @@ function applyTheme(t) {
   });
 }
 
+// ------------------------------------------------------------
+//  키워드 아이콘 바꾸기 (이 기기에서만)
+// ------------------------------------------------------------
+function renderKwIcons() {
+  const cur = getKwIcons();
+  $('#kwicons-list').innerHTML = KW_ICON_KEYS.map((k) => `<div class="kwi-row">
+      <span class="kwi-prev">${KEYWORDS[k].icon}</span><b>${KEYWORDS[k].name}</b>
+      <label class="btn small">그림 고르기<input type="file" accept="image/png,image/webp,image/jpeg,image/gif" data-kwfile="${k}" hidden></label>
+      ${cur[k] ? `<button class="btn small" data-kwreset="${k}">기본으로</button>` : '<span class="muted small">기본 아이콘</span>'}
+    </div>`).join('');
+}
+
+// 그림을 96px 정사각형 PNG로 줄임 (투명 배경 유지)
+function shrinkIcon(file) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const n = 96, cv = document.createElement('canvas');
+      cv.width = cv.height = n;
+      const k = Math.min(n / img.width, n / img.height);
+      const w = img.width * k, h = img.height * k;
+      cv.getContext('2d').drawImage(img, (n - w) / 2, (n - h) / 2, w, h);
+      URL.revokeObjectURL(url);
+      res(cv.toDataURL('image/png'));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('bad image')); };
+    img.src = url;
+  });
+}
+
+function initKwIcons() {
+  applyKwIcons();
+  $('#btn-kwicons').onclick = () => { renderKwIcons(); $('#kwicons').classList.add('show'); };
+  $('#kwicons-close').onclick = () => $('#kwicons').classList.remove('show');
+  $('#kwicons-reset').onclick = () => { for (const k of KW_ICON_KEYS) saveKwIcon(k, null); renderKwIcons(); toast('기본 아이콘으로 되돌렸습니다'); };
+  $('#kwicons-list').addEventListener('change', async (e) => {
+    const k = e.target.dataset.kwfile;
+    const f = e.target.files && e.target.files[0];
+    if (!k || !f) return;
+    try {
+      const url = await shrinkIcon(f);
+      if (!saveKwIcon(k, url)) { toast('저장 공간이 부족합니다', 'bad'); return; }
+      renderKwIcons();
+      renderAll();
+    } catch { toast('그림을 읽을 수 없습니다', 'bad'); }
+  });
+  $('#kwicons-list').addEventListener('click', (e) => {
+    const k = e.target.dataset.kwreset;
+    if (k) { saveKwIcon(k, null); renderKwIcons(); renderAll(); }
+  });
+}
+
 function initUI() {
+  initKwIcons();
   applyTheme(currentTheme());
   const cineBtn = $('#btn-cine');
   const cineLabel = () => { cineBtn.textContent = cineMode() === 'full' ? '🎬 전체 화면' : '🎬 무대 안'; };
