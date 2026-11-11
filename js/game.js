@@ -1,0 +1,1064 @@
+// ============================================================
+//  게임 엔진 (규칙 처리). 화면은 ui.js, 네트워크는 net.js
+//  플레이어 조작 방식(ctrl): local(이 기기) | remote(온라인 상대) | cpu
+//  G.mode: solo(혼자) | host(방장 — 엔진 실행) | client(참가자 — 화면만)
+// ============================================================
+'use strict';
+
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const rand = (n) => Math.floor(Math.random() * n);
+const pick = (arr) => arr[rand(arr.length)];
+const fxOf = (c) => c.fx || [];
+const hasFx = (c, f) => fxOf(c).includes(f);
+
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = rand(i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+let uidSeq = 1;
+
+const G = {
+  mode: 'solo',
+  meId: 0,
+  players: [],
+  shared: { deck: [], discard: [] },
+  deckMode: 'mixed',      // base | mixed | personal
+  current: 0,
+  turn: 0,                // 모든 플레이어의 턴을 합산한 수
+  round: 1,
+  over: false,
+  speed: 1,
+  difficulty: 'normal',
+  defs: {},               // 카드 id → 정의
+  sel: { main: null, plus: [], target: null, goods: null },
+  humanResolve: null,
+  acting: false,
+  hover: null,
+};
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms * G.speed));
+const isNight = () => G.turn >= RULES.nightTurn;
+const netFx = (k, d) => { if (G.mode === 'host' && typeof Net !== 'undefined') Net.fx(k, d); };
+
+// ------------------------------------------------------------
+//  저장 (전적)
+// ------------------------------------------------------------
+function loadStats() {
+  try { return JSON.parse(localStorage.getItem('af_stats')) || { win: 0, lose: 0 }; }
+  catch { return { win: 0, lose: 0 }; }
+}
+function saveStats(s) {
+  try { localStorage.setItem('af_stats', JSON.stringify(s)); } catch { /* 무시 */ }
+}
+
+// ------------------------------------------------------------
+//  카드 정의 / 이미지
+// ------------------------------------------------------------
+const IMG_RULES = new Map();
+function ensureImgStyle(c) {
+  if (!c.img || !/^[A-Za-z0-9_]+$/.test(c.id || '')) return;
+  if (IMG_RULES.get(c.id) === c.img) return;
+  IMG_RULES.set(c.id, c.img);
+  let el = document.getElementById('card-imgs');
+  if (!el) { el = document.createElement('style'); el.id = 'card-imgs'; document.head.appendChild(el); }
+  el.textContent = [...IMG_RULES].map(([id, img]) =>
+    `.cimg-${id}{background-image:linear-gradient(180deg,rgba(10,8,12,.55),rgba(10,8,12,.15) 40%,rgba(10,8,12,.9) 72%),url("${img}")}`).join('\n');
+}
+function registerDefs(list) {
+  for (const c of list) { G.defs[c.id] = c; ensureImgStyle(c); }
+}
+const cardRef = (c) => ({ uid: c.uid, id: c.id });
+function resolveCard(r) {
+  const d = r && G.defs[r.id];
+  return d ? { ...d, uid: r.uid } : null;
+}
+const instances = (defs) => {
+  const out = [];
+  for (const c of defs) for (let i = 0; i < (c.count || 1); i++) out.push({ ...c, uid: uidSeq++ });
+  return out;
+};
+// 다른 플레이어의 팩과 id가 겹치지 않게
+const nsCards = (cards, ns) => cards.map((c) => ({ ...c, id: `${ns}_${c.id}` }));
+
+// CPU용 개인 덱: 기본 카드에서 코스트 상한 안으로 무작위 구성
+function cpuPackDefs() {
+  const pool = shuffle(instances(CARDS));
+  const picked = [];
+  let cost = 0;
+  for (const c of pool) {
+    const k = cardCost(c);
+    if (cost + k > RULES.packBudget) continue;
+    picked.push(c);
+    cost += k;
+  }
+  return picked;
+}
+
+// ------------------------------------------------------------
+//  플레이어 / 덱
+// ------------------------------------------------------------
+function makePlayer(id, name, avatar, ctrl) {
+  return {
+    id, name, avatar, ctrl,
+    hp: RULES.maxHp, sp: 0, won: RULES.startWon, stg: RULES.staggerMax,
+    hand: [],
+    pile: null,
+    status: newStatus(),
+    alive: true,
+    dmgDealt: 0,
+  };
+}
+
+const me = () => G.players.find((p) => p.id === G.meId);
+const human = me;
+const alive = () => G.players.filter((p) => p.alive);
+const others = (p) => G.players.filter((q) => q.alive && q !== p);
+const pileOf = (p) => (G.deckMode === 'personal' && p.pile ? p.pile : G.shared);
+
+// 카드 뽑기. 뒷골목의 밤에는 일정 확률로 이벤트(청소부/연료통)가 대신 나옴
+function drawCards(p, n = 1) {
+  let got = 0;
+  const pile = pileOf(p);
+  for (let i = 0; i < n; i++) {
+    if (!p.alive) break;
+    if (isNight() && Math.random() < RULES.nightChance) {
+      nightEvent(p);
+      continue;
+    }
+    if (p.hand.length >= RULES.maxHand) break;
+    if (!pile.deck.length) {
+      if (!pile.discard.length) break;
+      pile.deck = shuffle(pile.discard);
+      pile.discard = [];
+      log(`<i>${G.deckMode === 'personal' ? p.name + '의 ' : ''}버려진 카드를 다시 섞어 덱을 만들었습니다.</i>`);
+    }
+    p.hand.push(pile.deck.pop());
+    got++;
+  }
+  return got;
+}
+
+function nightEvent(p) {
+  const entries = Object.entries(NIGHT_EVENTS);
+  let r = Math.random() * entries.reduce((s, [, e]) => s + e.weight, 0);
+  const [key, ev] = entries.find(([, e]) => (r -= e.weight) < 0) || entries[0];
+  if (key === 'sweeper') {
+    const dmg = pick(ev.damages);
+    showEvent(p, ev, `<span class="neg">${dmg} 피해</span>`);
+    log(`${ev.icon} <b class="neg">${ev.name}</b>이(가) ${pname(p)}을(를) 덮쳤습니다!`);
+    toastTo(p, `${ev.icon} 청소부 습격! ${dmg} 피해`, 'bad');
+    damage(p, dmg, `${ev.icon} 청소부`);
+    changeSp(p, -5, true);
+  } else {
+    const [what, amt] = pick(ev.gains);
+    const label = { hp: `HP +${amt}`, sp: `정신력 +${amt}`, won: `+${amt}원` }[what];
+    showEvent(p, ev, `<span class="pos">${label}</span>`);
+    log(`${ev.icon} ${pname(p)} 이(가) <b>${ev.name}</b>을(를) 주웠습니다 (${label})`);
+    toastTo(p, `${ev.icon} 연료통! ${label}`);
+    if (what === 'hp') heal(p, amt);
+    else if (what === 'sp') changeSp(p, amt);
+    else gainWon(p, amt);
+  }
+}
+
+function discardCard(p, card) {
+  const i = p.hand.findIndex((c) => c.uid === card.uid);
+  if (i >= 0) p.hand.splice(i, 1);
+  pileOf(p).discard.push(card);
+}
+const toDiscard = (p, card) => pileOf(p).discard.push(card);
+function giveCard(p, card) {
+  if (p.alive && p.hand.length < RULES.maxHand) p.hand.push(card); else toDiscard(p, card);
+}
+
+// ------------------------------------------------------------
+//  로그 / 연출 (방장이면 참가자에게도 전달)
+// ------------------------------------------------------------
+function pname(p) {
+  return `<b class="pn ${p.id === G.meId ? 'me' : ''}" data-pn="${p.id}">${p.avatar} ${p.name}</b>`;
+}
+function cname(c) {
+  return `<span class="cn r${c.rarity || 1}">「${c.name}」</span>`;
+}
+
+function log(html) {
+  logLocal(html);
+  netFx('log', { html });
+}
+function logLocal(html) {
+  const box = $('#log');
+  if (!box) return;
+  const el = document.createElement('div');
+  el.className = 'log-line';
+  el.innerHTML = html;
+  // 내 이름 강조는 보는 사람 기준
+  $$('[data-pn]', el).forEach((n) => n.classList.toggle('me', +n.dataset.pn === G.meId));
+  box.prepend(el);
+  while (box.children.length > 80) box.lastChild.remove();
+}
+
+function toast(text, kind = '') {
+  const t = document.createElement('div');
+  t.className = 'toast ' + kind;
+  t.textContent = text;
+  $('#toasts').appendChild(t);
+  setTimeout(() => t.remove(), 2400);
+}
+function toastAll(text, kind = '') {
+  toast(text, kind);
+  netFx('toast', { text, kind });
+}
+// 특정 플레이어에게만 보이는 알림
+function toastTo(p, text, kind = '') {
+  if (!p) return;
+  if (p.ctrl === 'local') toast(text, kind);
+  else if (p.ctrl === 'remote' && typeof Net !== 'undefined') Net.toastTo(p, text, kind);
+}
+
+function floatText(p, text, cls) {
+  floatLocal(p.id, text, cls);
+  netFx('float', { pid: p.id, text, cls });
+}
+function floatLocal(pid, text, cls) {
+  const panel = document.querySelector(`[data-pid="${pid}"]`);
+  if (!panel) return;
+  const r = panel.getBoundingClientRect();
+  const f = document.createElement('div');
+  f.className = 'float ' + cls;
+  f.textContent = text;
+  f.style.left = r.left + r.width / 2 + 'px';
+  f.style.top = r.top + r.height / 3 + 'px';
+  document.body.appendChild(f);
+  setTimeout(() => f.remove(), 1300);
+  if (cls === 'dmg') {
+    panel.classList.remove('hit');
+    void panel.offsetWidth;
+    panel.classList.add('hit');
+  }
+}
+
+function popStage(html) {
+  stageLocal(html);
+  netFx('stage', { html });
+}
+function stageLocal(html) {
+  const st = $('#stage');
+  st.innerHTML = html;
+  st.classList.remove('pop');
+  void st.offsetWidth;
+  st.classList.add('pop');
+}
+function clearStage(text = '') {
+  clearStageLocal(text);
+  netFx('clear', { text });
+}
+function clearStageLocal(text) {
+  $('#stage').innerHTML = text ? `<div class="stage-idle">${text}</div>` : '';
+}
+function setNight(on) {
+  document.body.classList.toggle('night', on);
+  netFx('night', { on });
+}
+
+function showStage(attacker, cards, targetText, extra = '') {
+  popStage(`
+    <div class="stage-head">${pname(attacker)} <span class="arrow">▶</span> ${targetText}</div>
+    <div class="stage-cards">${cards.map((c) => cardHTML(c, { big: true })).join('')}</div>
+    ${extra ? `<div class="stage-extra">${extra}</div>` : ''}`);
+}
+
+function showEvent(p, ev, result) {
+  popStage(`
+    <div class="stage-head">🌙 뒷골목의 밤 — ${pname(p)}</div>
+    <div class="night-card"><div class="night-icon">${ev.icon}</div><div class="night-name">${ev.name}</div>
+      <div class="flavor">${ev.flavor}</div></div>
+    <div class="stage-extra">${result}</div>`);
+}
+
+// ------------------------------------------------------------
+//  HP / 정신력 / 돈 / 흐트러짐
+// ------------------------------------------------------------
+function damage(p, n, source = '', killer = null) {
+  if (!p.alive || n <= 0) return;
+  p.hp = Math.max(0, p.hp - n);
+  floatText(p, '-' + n, 'dmg');
+  if (source) log(`${pname(p)}: ${source} <span class="neg">-${n}</span>`);
+  if (p.hp <= 0) kill(p, killer);
+}
+
+function heal(p, n) {
+  if (!p.alive || n <= 0) return 0;
+  const before = p.hp;
+  p.hp = Math.min(RULES.maxHp, p.hp + n);
+  const got = p.hp - before;
+  if (got > 0) floatText(p, '+' + got, 'heal');
+  return got;
+}
+
+function gainWon(p, n) {
+  const before = p.won;
+  p.won = Math.max(0, Math.min(RULES.maxWon, p.won + n));
+  const got = p.won - before;
+  if (got > 0) floatText(p, `+${got}원`, 'won');
+  return got;
+}
+
+// 지불: 돈 → (모자라면) 정신력(0까지) → HP 순서로 냄. 받는 쪽은 실제로 낸 돈만 받음
+function pay(payer, receiver, amount) {
+  let left = amount;
+  const fromWon = Math.min(payer.won, left);
+  payer.won -= fromWon;
+  left -= fromWon;
+  let fromSp = 0, fromHp = 0;
+  if (left > 0 && payer.sp > 0) {
+    fromSp = Math.min(payer.sp, left);
+    left -= fromSp;
+    changeSp(payer, -fromSp);
+  }
+  if (left > 0) {
+    fromHp = left;
+    damage(payer, fromHp, '', receiver);
+  }
+  if (fromWon > 0) {
+    floatText(payer, `-${fromWon}원`, 'spdown');
+    gainWon(receiver, fromWon);
+  }
+  const parts = [`${fromWon}원`];
+  if (fromSp) parts.push(`정신력 ${fromSp}`);
+  if (fromHp) parts.push(`<span class="neg">HP ${fromHp}</span>`);
+  return parts.join(' + ');
+}
+
+function kill(p, killer = null) {
+  p.alive = false;
+  for (const c of [...p.hand]) discardCard(p, c);
+  log(`💀 ${pname(p)} 이(가) 쓰러졌습니다.`);
+  toastAll(`${p.name} 탈락!`, 'bad');
+  // 누군가 쓰러지면: 처치자는 고양, 나머지는 동요
+  for (const q of alive()) changeSp(q, q === killer ? 15 : -5, true);
+}
+
+function changeSp(p, n, quiet = false) {
+  if (!p.alive || n === 0) return;
+  const before = p.sp;
+  p.sp = Math.max(RULES.minSp, Math.min(RULES.maxSp, p.sp + n));
+  const got = p.sp - before;
+  if (got && !quiet) floatText(p, (got > 0 ? '+' : '') + got + ' SP', got > 0 ? 'sp' : 'spdown');
+  if (p.sp <= RULES.minSp && !has(p, 'panic')) {
+    addStatus(p, 'panic', 0, 1, true);
+    log(`😱 ${pname(p)} 의 정신력이 무너졌습니다! <b class="neg">공황</b> 상태`);
+    toastTo(p, '공황 상태! 다음 턴을 쉽니다', 'bad');
+  }
+}
+
+// 흐트러짐 피해: 게이지가 0이 되면 흐트러짐
+function staggerDamage(p, n) {
+  if (!p.alive || n <= 0 || has(p, 'staggered')) return;
+  p.stg = Math.max(0, p.stg - n);
+  if (p.stg === 0) {
+    addStatus(p, 'staggered', 0, 1, true);
+    log(`💢 ${pname(p)} <b class="neg">흐트러짐!</b> 다음 턴을 쉬고, 방어할 수 없으며, 받는 피해 ${RULES.staggerMult}배`);
+    floatText(p, '흐트러짐!', 'dmg');
+    toastTo(p, '💢 흐트러짐! 다음 턴을 쉬고 방어할 수 없습니다', 'bad');
+  }
+}
+
+// 정신력에 따른 코인 앞면 확률: 50% + 정신력% (5% ~ 95%)
+function headChance(sp) {
+  return Math.max(0.05, Math.min(0.95, 0.5 + sp / 100));
+}
+
+const defaultCoins = () => Array.from({ length: RULES.coins }, () => ({ power: RULES.coinPower, fx: [] }));
+
+// 코인 목록을 던져 [{ coin, head, power }] 반환
+function rollCoins(p, coins) {
+  const chance = headChance(p.sp);
+  return coins.map((coin) => ({ coin, head: Math.random() < chance, power: coin.power }));
+}
+const coinSum = (rolls) => rolls.reduce((s, r) => s + (r.head ? r.power : 0), 0);
+
+function coinsHTML(rolls) {
+  return rolls.map((r) => `<span class="coin ${r.head ? 'head' : 'tail'}" title="코인 위력 ${r.power}">${r.head ? r.power : '○'}</span>`).join('');
+}
+
+// 위력 분포: 기본값 + 코인들(각자 위력)의 앞면 합
+function powerDist(base, coins, chance) {
+  let dist = new Map([[base, 1]]);
+  for (const c of coins) {
+    const next = new Map();
+    for (const [v, pr] of dist) {
+      next.set(v + c.power, (next.get(v + c.power) || 0) + pr * chance);
+      next.set(v, (next.get(v) || 0) + pr * (1 - chance));
+    }
+    dist = next;
+  }
+  return dist;
+}
+
+// 합 결과 분포 (방어자 기준 승/무/패 확률, 예상 피해)
+function clashStats(atkBase, atkCoins, spA, defBase, defCoins, spD, useArmor) {
+  const A = powerDist(atkBase, atkCoins, headChance(spA));
+  const D = useArmor ? powerDist(defBase, defCoins, headChance(spD)) : new Map([[0, 1]]);
+  let win = 0, tie = 0, lose = 0, exp = 0, max = 0;
+  for (const [a, pa] of A) for (const [d, pd] of D) {
+    const pr = pa * pd;
+    if (d > a) win += pr;
+    else if (d === a) tie += pr;
+    else { lose += pr; exp += pr * (a - d); max = Math.max(max, a - d); }
+  }
+  return { win, tie, lose, exp, max };
+}
+
+// ------------------------------------------------------------
+//  전투 처리
+// ------------------------------------------------------------
+// 코인: 주 카드의 코인(없으면 기본 코인) + 보조 무기의 커스텀 코인
+function buildAttack(cards) {
+  const main = cards[0];
+  const isEgo = main.type === 'ego';
+  let atk = isEgo ? main.power : 0;
+  const fx = new Set();
+  const effects = [];
+  let coins = Array.isArray(main.coins) ? main.coins.map((c) => ({ ...c })) : defaultCoins();
+  cards.forEach((c, i) => {
+    if (!isEgo) atk += c.atk;
+    fxOf(c).forEach((f) => fx.add(f));
+    effects.push(...(c.effects || []));
+    if (i > 0 && Array.isArray(c.coins)) coins = coins.concat(c.coins.map((x) => ({ ...x })));
+  });
+  const coinMax = coins.reduce((s, c) => s + c.power, 0);
+  return { atk, attr: main.attr, fx: [...fx], effects, coins, coinMax, cards, name: cards.map((c) => c.name).join(' + ') };
+}
+
+// 방어 코인: 기본 코인 + 방어구의 커스텀 코인
+function defenseCoins(armors) {
+  let coins = defaultCoins();
+  for (const a of armors) if (Array.isArray(a.coins)) coins = coins.concat(a.coins.map((x) => ({ ...x })));
+  return coins;
+}
+
+function armorMatches(armor, attr) {
+  return armor.attr === 'all' || armor.attr === attr;
+}
+
+function armorDef(target, armors) {
+  let def = armors.reduce((s, a) => s + a.def, 0);
+  if (has(target, 'fragile')) def = Math.floor(def / 2);
+  return def;
+}
+
+async function performAttack(attacker, cards, targets) {
+  const info = buildAttack(cards);
+  if (cards[0].type === 'ego') changeSp(attacker, -cards[0].cost);
+  for (const c of cards) discardCard(attacker, c);
+
+  if (info.fx.includes('all')) targets = others(attacker);
+  const tText = info.fx.includes('all') ? '<b>전원</b>' : targets.map(pname).join(', ');
+  const a = ATTR[info.attr];
+  showStage(attacker, cards, tText,
+    `<span style="color:${a.color}">${a.icon} ${a.name}</span> 위력 <b>${info.atk}</b> + 코인 ${info.coins.length}개` +
+    (info.fx.length ? ' · ' + info.fx.map((f) => FX_TEXT[f]).join(', ') : ''));
+  log(`${pname(attacker)} ▶ ${tText} : ${cards.map(cname).join(' + ')} <span class="muted">(${a.icon}${info.atk})</span>`);
+  renderAll();
+  await sleep(700);
+
+  // 사용 시 효과 (자신 대상)
+  applyEffects(info.effects.filter((e) => e.when === 'use' && e.target === 'self'), attacker, null);
+
+  // 출혈: 공격할 때마다 피해
+  if (has(attacker, 'bleed')) {
+    triggerOnAttack(attacker);
+    renderAll();
+    await sleep(350);
+    if (!attacker.alive) return;
+  }
+
+  const hits = info.fx.includes('twice') ? 2 : 1;
+  for (const t of targets) {
+    for (let h = 0; h < hits; h++) {
+      if (!t.alive || !attacker.alive) break;
+      await resolveHit(attacker, t, info);
+      renderAll();
+      await sleep(450);
+    }
+  }
+
+  if (info.fx.includes('holy') && attacker.alive) {
+    heal(attacker, 5);
+    log(`${pname(attacker)} ✦ 성스러운 기운으로 HP 5 회복`);
+  }
+  renderAll();
+}
+
+// 충전 소모 효과를 적용한 이번 공격의 코인
+function prepareCoins(p, coins) {
+  return coins.map((c) => {
+    let power = c.power;
+    for (const e of c.fx || []) {
+      if (e.key === 'chargeBoost' && p.status.charge.cnt >= (e.cnt || 0)) {
+        useCount(p, 'charge', e.cnt || 0);
+        power += e.pot || 0;
+        log(`${pname(p)} ⚡ 충전 ${e.cnt} 소모 — 코인 위력 +${e.pot}`);
+      }
+    }
+    return { ...c, power };
+  });
+}
+
+// 방어 선택: 조작 방식에 따라
+async function defendFor(p, attacker, info) {
+  if (info.fx.includes('pierce')) return [];
+  if (has(p, 'staggered')) {
+    log(`${pname(p)} 💢 흐트러져서 방어할 수 없습니다`);
+    return [];
+  }
+  let armors;
+  if (p.ctrl === 'local') armors = await humanDefend(p, attacker, info);
+  else if (p.ctrl === 'remote') armors = await Net.askDefend(p, attacker, info);
+  else armors = cpuDefend(p, info, attacker);
+  // 검증: 손에 있고, 속성이 맞는 방어구만
+  return (armors || []).filter((c, i, arr) => c && arr.indexOf(c) === i && p.hand.includes(c) && c.type === 'armor' && armorMatches(c, info.attr));
+}
+
+async function resolveHit(attacker, target, info) {
+  // 사용 시 효과 (대상에게)
+  applyEffects(info.effects.filter((e) => e.when === 'use' && e.target === 'enemy'), attacker, target);
+  if (!target.alive) return;
+
+  const pierce = info.fx.includes('pierce');
+  const armors = await defendFor(target, attacker, info);
+  for (const ar of armors) discardCard(target, ar);
+  for (const ar of armors) applyEffects((ar.effects || []).filter((e) => e.when === 'use'), target, attacker);
+
+  // 무효화: 합 없이 막음
+  if (armors.some((x) => hasFx(x, 'nullify'))) {
+    showClash(attacker, info, null, null, target, armors, null, null, 'nullify');
+    log(`${pname(target)} ${armors.map(cname).join(' + ')} 🛑 공격을 무효화했습니다!`);
+    floatText(target, '무효', 'block');
+    changeSp(target, 5, true);
+    changeSp(attacker, -3, true);
+    renderAll();
+    await sleep(900);
+    return;
+  }
+
+  const ca = rollCoins(attacker, prepareCoins(attacker, info.coins));
+  const pa = info.atk + coinSum(ca);
+
+  if (!armors.length) {
+    showClash(attacker, info, ca, pa, target, [], null, null, 'open');
+    log(`${pname(attacker)} 위력 <b>${pa}</b> ${coinsHTML(ca)} → ${pname(target)} 무방비${pierce ? ' (관통)' : ''}`);
+    renderAll();
+    await sleep(800);
+    landHit(attacker, target, pa, info, ca);
+    return;
+  }
+
+  // 합
+  const cd = rollCoins(target, defenseCoins(armors));
+  const def = armorDef(target, armors);
+  const pd = def + coinSum(cd);
+  const result = pa > pd ? 'atk' : pd > pa ? 'def' : 'tie';
+  showClash(attacker, info, ca, pa, target, armors, cd, pd, result);
+  log(`⚔ 합! ${pname(attacker)} <b>${pa}</b> ${coinsHTML(ca)} vs ${coinsHTML(cd)} <b>${pd}</b> ${pname(target)} ${armors.map(cname).join(' + ')}`);
+  renderAll();
+  await sleep(1200);
+
+  // 방어구 코인: 앞면이면 효과
+  for (const r of cd) if (r.head) applyEffects((r.coin.fx || []).filter((e) => e.when === 'heads'), target, attacker);
+
+  if (result === 'atk') {
+    log(`${pname(attacker)} 합 승리! ${pa - pd} 피해`);
+    changeSp(attacker, 5, true);
+    changeSp(target, -5, true);
+    landHit(attacker, target, pa - pd, info, ca);
+  } else if (result === 'def') {
+    floatText(target, '합 승리', 'sp');
+    log(`${pname(target)} 합 승리! 공격을 완전히 막아냈습니다.`);
+    changeSp(target, 5, true);
+    changeSp(attacker, -5, true);
+    for (const ar of armors) applyEffects((ar.effects || []).filter((e) => e.when === 'hit'), target, attacker);
+    for (const r of cd) applyEffects((r.coin.fx || []).filter((e) => e.when === 'hit'), target, attacker);
+    if (armors.some((x) => hasFx(x, 'reflect'))) {
+      const back = Math.floor(pa / 2);
+      if (back > 0) damage(attacker, back, '🪞 반사 피해', target);
+    }
+  } else {
+    log('합 무승부 — 공격과 방어가 상쇄되었습니다.');
+    floatText(target, '상쇄', 'block');
+  }
+}
+
+function showClash(attacker, info, ca, pa, target, armors, cd, pd, result) {
+  const aSide = `
+    <div class="clash-side">
+      <div>${pname(attacker)}</div>
+      <div class="stage-cards">${info.cards.map((c) => cardHTML(c, { big: true })).join('')}</div>
+      ${ca ? `<div class="coins">${coinsHTML(ca)}</div>
+      <div class="clash-pow ${result === 'atk' || result === 'open' ? 'win' : result === 'def' ? 'lose' : ''}">${pa}</div>` : ''}
+    </div>`;
+  let dSide;
+  if (result === 'open') {
+    dSide = `<div class="clash-side"><div>${pname(target)}</div><div class="open-guard">${has(target, 'staggered') ? '💢 흐트러짐' : '무방비'}</div></div>`;
+  } else {
+    dSide = `
+      <div class="clash-side">
+        <div>${pname(target)}</div>
+        <div class="stage-cards">${armors.map((c) => cardHTML(c, { big: true })).join('')}</div>
+        ${cd ? `<div class="coins">${coinsHTML(cd)}</div>
+        <div class="clash-pow ${result === 'def' ? 'win' : result === 'atk' ? 'lose' : ''}">${pd}</div>` : '<div class="clash-pow win">무효</div>'}
+      </div>`;
+  }
+  popStage(`
+    <div class="stage-head">${result === 'open' ? '⚔ 공격' : '⚔ <b>합</b> ⚔'}</div>
+    <div class="clash">${aSide}<div class="clash-vs">VS</div>${dSide}</div>`);
+}
+
+// 피해 적중 공통 처리
+function landHit(attacker, target, dmg, info, rolls = []) {
+  if (dmg <= 0) return;
+  dmg = rollCrit(attacker, dmg);
+  if (has(target, 'staggered')) {
+    const up = Math.ceil(dmg * RULES.staggerMult);
+    log(`💢 흐트러진 상대에게 ${dmg} → <b>${up}</b> 피해`);
+    dmg = up;
+  }
+  damage(target, dmg, `<span class="muted">${info.name}</span> 피격`, attacker);
+  attacker.dmgDealt += dmg;
+  staggerDamage(target, dmg);
+  changeSp(attacker, 5, true);
+  changeSp(target, -Math.max(2, Math.floor(dmg / 2)), true);
+
+  if (info.fx.includes('lifesteal') && attacker.alive) {
+    const got = heal(attacker, Math.floor(dmg / 2));
+    if (got) log(`${pname(attacker)} 흡혈로 HP ${got} 회복`);
+  }
+  if (info.fx.includes('drainsp') && target.alive) {
+    log(`${pname(attacker)} 이(가) ${pname(target)}의 정신력 10 흡수`);
+    changeSp(target, -10);
+    changeSp(attacker, 10);
+  }
+  if (info.fx.includes('mind') && target.alive) {
+    log(`${pname(target)} 🌀 정신 피해 — 정신력 -10`);
+    changeSp(target, -10);
+  }
+  // 적중 시 효과 (카드) / 코인 효과 (적중 시, 앞면 적중 시)
+  applyEffects(info.effects.filter((e) => e.when === 'hit'), attacker, target);
+  for (const r of rolls) {
+    applyEffects((r.coin.fx || []).filter((e) => e.when === 'hit' || (e.when === 'heads' && r.head)), attacker, target);
+  }
+  // 피격 키워드: 파열, 침잠
+  triggerOnHit(target, attacker);
+}
+
+// ------------------------------------------------------------
+//  도구 / 보조 E.G.O
+// ------------------------------------------------------------
+async function useSupport(p, card, target) {
+  if (card.type === 'ego') changeSp(p, -card.cost, true);
+  discardCard(p, card);
+  const tgtText = target && target !== p ? pname(target) : pname(p);
+  showStage(p, [card], tgtText);
+  log(`${pname(p)} ${cname(card)} 사용`);
+
+  const kind = card.kind;
+  if (kind === 'custom' || (card.custom && card.effects)) {
+    const enemy = target && target !== p ? target : null;
+    applyEffects((card.effects || []).filter((e) => e.target === 'self' || enemy), p, enemy);
+  } else if (kind === 'heal') {
+    const got = heal(p, card.power);
+    log(`${pname(p)} HP ${got} 회복`);
+  } else if (kind === 'sp') {
+    changeSp(p, card.power);
+    log(`${pname(p)} 정신력 ${card.power} 회복`);
+  } else if (kind === 'won') {
+    gainWon(p, card.power);
+    log(`${pname(p)} ${card.power}원 획득`);
+  } else if (kind === 'cure') {
+    cureAll(p);
+    floatText(p, '정화', 'heal');
+    log(`${pname(p)} 모든 이상 상태 해제`);
+  } else if (kind === 'draw') {
+    const n = drawCards(p, card.power);
+    log(`${pname(p)} 카드 ${n}장 획득`);
+  } else if (kind === 'gamble') {
+    const roll = rand(5);
+    if (roll === 0) { heal(p, 25); log('📦 상자 속에는 구급 상자가! HP 25 회복'); }
+    else if (roll === 1) { damage(p, 12, '📦 상자가 폭발했다!'); }
+    else if (roll === 2) { changeSp(p, 15); log('📦 상자 속에는 진정 향초가! 정신력 15 회복'); }
+    else if (roll === 3) { gainWon(p, 25); log('📦 상자 속에는 현금 다발이! 25원 획득'); }
+    else { const n = drawCards(p, 3); log(`📦 상자 속에서 카드 ${n}장 발견!`); }
+  } else if (kind === 'steal') {
+    if (target.hand.length) {
+      const c = pick(target.hand);
+      target.hand.splice(target.hand.indexOf(c), 1);
+      giveCard(p, c);
+      log(`${pname(p)} 이(가) ${pname(target)}의 카드를 압류했습니다`);
+      toastTo(p, `「${c.name}」을(를) 압류했습니다`);
+      toastTo(target, `「${c.name}」을(를) 빼앗겼습니다!`, 'bad');
+    } else {
+      log(`${pname(target)}의 손패가 비어 있습니다.`);
+    }
+  } else if (kind === 'stun') {
+    addStatus(target, 'stun', 0, 1, true);
+    log(`${pname(target)} 💫 정신이 오염되어 다음 턴을 쉽니다 (정신력 -10)`);
+    floatText(target, '기절', 'dmg');
+    changeSp(target, -10, true);
+  }
+  renderAll();
+  await sleep(600);
+}
+
+// 기도: 손패가 가득 차 있으면 가장 쓸모없는 카드 1장을 버리고 뽑음
+function pray(p) {
+  let tossed = null;
+  if (p.hand.length >= RULES.maxHand) {
+    const val = (c) => (c.type === 'armor' ? c.def * 0.8 : c.type === 'weapon' ? c.atk : 10) + (c.rarity || 1) * 3;
+    tossed = [...p.hand].sort((a, b) => val(a) - val(b))[0];
+    discardCard(p, tossed);
+  }
+  const n = drawCards(p, 1);
+  changeSp(p, 10);
+  log(`${pname(p)} 🙏 기도했습니다 (${tossed ? `${cname(tossed)} 버림, ` : ''}카드 ${n}장, 정신력 +10)`);
+}
+
+// ------------------------------------------------------------
+//  거래: 매입 / 매각 / 환전 (상대가 막을 수 없음)
+// ------------------------------------------------------------
+// 매입 결정: 조작 방식에 따라
+function buyDeciderFor(p, target) {
+  if (p.ctrl === 'local') return (item) => humanBuyDecide(p, target, item);
+  if (p.ctrl === 'remote') return (item) => Net.ask(p, 'buy', { item: cardRef(item), targetId: target.id }, 30, false);
+  return async (item) => cpuWantsBuy(p, item);
+}
+
+async function tradeBuy(p, card, target, decide) {
+  discardCard(p, card);
+  showStage(p, [card], pname(target));
+  log(`${pname(p)} ${cname(card)} → ${pname(target)}`);
+  renderAll();
+  await sleep(500);
+  if (!target.hand.length) {
+    log(`${pname(target)}의 손패가 비어 있어 살 것이 없습니다.`);
+    return;
+  }
+  const item = pick(target.hand);
+  const price = item.price || 0;
+  showStage(p, [item], `${pname(target)}의 카드`, `가격 <b class="won">₩${price}</b>`);
+  renderAll();
+  await sleep(500);
+  const ok = p.won >= price && (await decide(item)) === true;
+  if (!ok || !target.hand.includes(item)) {
+    log(`${pname(p)} 이(가) ${pname(target)}의 카드를 사지 않았습니다.`);
+    return;
+  }
+  const paid = pay(p, target, price);
+  target.hand.splice(target.hand.indexOf(item), 1);
+  giveCard(p, item);
+  log(`🛒 ${pname(p)} 이(가) ${pname(target)}에게서 ${cname(item)}을(를) 매입 (${paid})`);
+  toastTo(target, `「${item.name}」을(를) ₩${price}에 매입당했습니다`, 'bad');
+  renderAll();
+  await sleep(600);
+}
+
+// 매각: 내 카드 1장을 상대에게 강제로 판매
+async function tradeSell(p, card, goods, target) {
+  discardCard(p, card);
+  p.hand.splice(p.hand.indexOf(goods), 1);
+  const price = goods.price || 0;
+  showStage(p, [card, goods], pname(target), `판매가 <b class="won">₩${price}</b> — 거부할 수 없음`);
+  log(`💸 ${pname(p)} 이(가) ${pname(target)}에게 ${cname(goods)}을(를) ₩${price}에 강매`);
+  renderAll();
+  await sleep(700);
+  const paid = pay(target, p, price);
+  if (target.alive) giveCard(target, goods); else toDiscard(target, goods);
+  log(`${pname(target)} 지불: ${paid}`);
+  toastTo(target, `「${goods.name}」을(를) ₩${price}에 강매당했습니다`, 'bad');
+  renderAll();
+  await sleep(600);
+}
+
+// 환전: HP·정신력·돈을 합계를 유지한 채 재배분
+function exchangeLimits(p) {
+  return {
+    total: p.hp + p.sp + p.won,
+    hp: [1, RULES.maxHp],
+    sp: [Math.min(p.sp, 0), RULES.maxSp],   // 정신력은 0(또는 현재값) 아래로는 못 내림
+    won: [0, RULES.maxWon],
+  };
+}
+
+function validExchange(p, plan) {
+  const L = exchangeLimits(p);
+  return !!plan && ['hp', 'sp', 'won'].every((k) => Number.isInteger(plan[k]) && plan[k] >= L[k][0] && plan[k] <= L[k][1]) &&
+    plan.hp + plan.sp + plan.won === L.total;
+}
+
+async function tradeExchange(p, card, plan) {
+  if (!validExchange(p, plan)) return false;
+  discardCard(p, card);
+  const before = `HP ${p.hp} / SP ${p.sp} / ₩${p.won}`;
+  const dhp = plan.hp - p.hp, dsp = plan.sp - p.sp, dwon = plan.won - p.won;
+  p.hp = plan.hp;
+  p.sp = plan.sp;
+  p.won = plan.won;
+  showStage(p, [card], pname(p), `${before} → <b>HP ${p.hp} / SP ${p.sp} / ₩${p.won}</b>`);
+  log(`💱 ${pname(p)} 환전: ${before} → HP ${p.hp} / SP ${p.sp} / ₩${p.won}`);
+  if (dhp) floatText(p, (dhp > 0 ? '+' : '') + dhp, dhp > 0 ? 'heal' : 'dmg');
+  else if (dsp) floatText(p, (dsp > 0 ? '+' : '') + dsp + ' SP', dsp > 0 ? 'sp' : 'spdown');
+  else if (dwon) floatText(p, (dwon > 0 ? '+' : '') + dwon + '원', 'won');
+  renderAll();
+  await sleep(700);
+  return true;
+}
+
+const itemHitsEnemy = (c) => c.type === 'item' && (c.effects || []).some((e) => e.target === 'enemy');
+const isFreeAction = (c) => (c.type === 'item' && !itemHitsEnemy(c)) || (c.type === 'ego' && ['heal', 'cure'].includes(c.kind)) ||
+  (c.type === 'trade' && c.kind === 'exchange');
+const needsTarget = (c) => itemHitsEnemy(c) ||
+  (c.type === 'trade' && (c.kind === 'buy' || c.kind === 'sell')) ||
+  (c.type === 'weapon' && !hasFx(c, 'all')) ||
+  (c.type === 'ego' && (c.kind === 'stun' || c.kind === 'steal' || (c.kind === 'attack' && !hasFx(c, 'all'))));
+// E.G.O는 정신력이 최저치 아래로 떨어지지 않을 때만 사용 가능
+const canPayEgo = (p, c) => p.sp - c.cost > RULES.minSp;
+
+// ------------------------------------------------------------
+//  행동 실행 — 이 기기의 클릭과 원격 플레이어의 행동이 모두 여기를 거침
+//  a = { act: 'pray' | 'play', main: uid, plus: [uid], target: pid, goods: uid, plan: {hp, sp, won} }
+//  반환: { ok, ended, msg }
+// ------------------------------------------------------------
+async function executeAction(p, a) {
+  const R = (ended, ok = true, msg = '') => ({ ended, ok, msg });
+  if (!a || typeof a !== 'object') return R(false, false, '잘못된 행동입니다');
+  if (a.act === 'pray') {
+    pray(p);
+    if (p.alive) clearStage(`${p.avatar} ${p.name} 🙏 기도`);
+    renderAll();
+    await sleep(500);
+    return R(true);
+  }
+  const card = p.hand.find((c) => c.uid === a.main);
+  if (!card) return R(false, false, '그 카드가 손에 없습니다');
+  const target = a.target != null ? G.players.find((q) => q.id === a.target && q.alive && q !== p) : null;
+  if (card.type === 'armor') return R(false, false, '방어구는 공격받을 때 사용합니다');
+  if (card.type === 'ego' && !canPayEgo(p, card)) return R(false, false, '정신력이 부족합니다');
+  if (needsTarget(card) && !target) return R(false, false, '대상을 선택하세요');
+
+  if (card.type === 'weapon' || (card.type === 'ego' && card.kind === 'attack')) {
+    let plus = [];
+    if (card.type === 'weapon') {
+      plus = [...new Set(a.plus || [])].map((u) => p.hand.find((c) => c.uid === u))
+        .filter((c) => c && c !== card && c.type === 'weapon' && c.plus);
+    }
+    await performAttack(p, [card, ...plus], target ? [target] : []);
+    return R(true);
+  }
+  if (card.type === 'trade') {
+    if (card.kind === 'exchange') {
+      const ok = await tradeExchange(p, card, a.plan);
+      return R(false, ok, ok ? '' : '환전 값이 올바르지 않습니다');
+    }
+    if (card.kind === 'buy') {
+      await tradeBuy(p, card, target, buyDeciderFor(p, target));
+      return R(true);
+    }
+    const goods = p.hand.find((c) => c.uid === a.goods && c !== card);
+    if (!goods) return R(false, false, '팔 카드를 선택하세요');
+    await tradeSell(p, card, goods, target);
+    return R(true);
+  }
+  if (isFreeAction(card)) {
+    await useSupport(p, card, p);
+    return R(false);
+  }
+  await useSupport(p, card, target);
+  return R(true);
+}
+
+// 원격 플레이어의 턴: 행동을 받아 실행, 턴이 끝날 때까지 반복
+async function remoteTurn(p) {
+  for (let i = 0; i < 15; i++) {
+    if (!p.alive || G.over) return;
+    if (p.ctrl !== 'remote') { await cpuTurn(p); return; }   // 도중에 연결이 끊기면 CPU가 이어받음
+    const a = await Net.ask(p, 'turn', {}, RULES.turnTimeout, { act: 'pray', timeout: true });
+    if (a && a.timeout) log(`${pname(p)} ⏱ 시간 초과 — 자동으로 기도합니다`);
+    const r = await executeAction(p, a);
+    if (!r.ok) toastTo(p, r.msg, 'bad');
+    if (r.ended || checkEnd()) return;
+  }
+  pray(p);
+}
+
+// ------------------------------------------------------------
+//  턴 진행
+// ------------------------------------------------------------
+async function runGame() {
+  const session = G.session;
+  while (!G.over && G.session === session) {
+    const p = G.players[G.current];
+    if (p.alive) {
+      await takeTurn(p);
+      if (G.session !== session) return;
+      if (checkEnd()) break;
+    }
+    G.current = (G.current + 1) % G.players.length;
+    if (G.current === 0) G.round++;
+  }
+}
+
+async function takeTurn(p) {
+  G.turn++;
+  if (G.turn === RULES.nightTurn) {
+    setNight(true);
+    log('<div class="turn-mark night-mark">🌙 뒷골목의 밤이 찾아왔습니다. 이제 카드를 뽑을 때 청소부가 나타날 수 있습니다.</div>');
+    toastAll('🌙 뒷골목의 밤이 시작되었습니다', 'bad');
+    await sleep(900);
+  }
+  renderAll();
+  clearStage(`${p.avatar} ${p.name}의 차례`);
+  log(`<div class="turn-mark">— TURN ${G.turn} · ${p.name} —</div>`);
+  await sleep(450);
+
+  // 흐트러짐 게이지 회복
+  if (!has(p, 'staggered')) p.stg = Math.min(RULES.staggerMax, p.stg + RULES.staggerRegen);
+
+  // 화상
+  if (has(p, 'burn')) {
+    triggerTurnStart(p);
+    renderAll();
+    await sleep(350);
+    if (!p.alive) return;
+  }
+
+  const staggered = has(p, 'staggered');
+  const panicking = has(p, 'panic');
+  const skip = has(p, 'stun') || panicking || staggered;
+  if (!skip) {
+    const n = drawCards(p, RULES.drawPerTurn);
+    if (n) toastTo(p, '카드 1장을 뽑았습니다');
+    renderAll();
+    if (!p.alive) return;
+    if (!n) await sleep(500);
+  }
+  renderAll();
+
+  if (skip) {
+    if (staggered) {
+      log(`${pname(p)} 💢 흐트러져서 행동할 수 없습니다. 자세를 바로잡습니다... (흐트러짐 게이지 회복)`);
+      floatText(p, '흐트러짐', 'block');
+      p.status.staggered = { pot: 0, cnt: 0 };
+      p.stg = RULES.staggerMax;
+    }
+    if (panicking) {
+      log(`${pname(p)} 😱 공황 상태라 행동할 수 없습니다. 정신을 추스릅니다... (정신력 0으로 회복)`);
+      floatText(p, '공황', 'block');
+      p.sp = 0;
+    }
+    if (!staggered && !panicking) {
+      log(`${pname(p)} 💫 기절해서 행동할 수 없습니다`);
+      floatText(p, '기절', 'block');
+    }
+    await sleep(800);
+  } else if (p.ctrl === 'local') {
+    await humanTurn(p);
+  } else if (p.ctrl === 'remote') {
+    await remoteTurn(p);
+  } else {
+    await cpuTurn(p);
+  }
+
+  decayStatus(p);
+  renderAll();
+}
+
+function checkEnd() {
+  if (G.over) return true;
+  const live = alive();
+  if (G.mode === 'solo') {
+    if (!me().alive) { endGame(false, live.length + 1); return true; }
+    if (live.length === 1) { endGame(true, 1); return true; }
+    return false;
+  }
+  if (live.length <= 1) {
+    endMatch(live[0] || null);
+    return true;
+  }
+  return false;
+}
+
+function endGame(win, rank) {
+  G.over = true;
+  const s = loadStats();
+  if (win) s.win++; else s.lose++;
+  saveStats(s);
+  showResult(win ? '최후의 생존자' : '퇴근 실패', win,
+    `<p>${win ? '구역의 모든 경쟁자를 제압했습니다.' : `${rank}위로 탈락했습니다.`}</p>
+     <p class="muted">진행한 턴: ${G.turn} · 입힌 피해: ${me().dmgDealt}</p>
+     <p class="muted">통산 전적 ${s.win}승 ${s.lose}패</p>`);
+}
+
+// 멀티: 승자 결정
+function endMatch(winner) {
+  G.over = true;
+  if (G.mode === 'host') Net.end(winner);
+  showMatchResult(winner ? winner.id : null);
+}
+
+// ------------------------------------------------------------
+//  경기 시작
+//  cfg.players: [{ name, avatar, ctrl, cid?, pack?: { name, cards } }]
+//  cfg.deckMode: base | mixed | personal
+// ------------------------------------------------------------
+function startMatch(cfg) {
+  G.session = (G.session || 0) + 1;
+  uidSeq = 1;
+  G.mode = cfg.mode;
+  G.deckMode = cfg.deckMode;
+  G.speed = cfg.speed;
+  G.difficulty = cfg.difficulty;
+  G.meId = cfg.meId;
+  G.turn = 0;
+  G.round = 1;
+  G.over = false;
+  G.acting = false;
+  G.humanResolve = null;
+  G.hover = null;
+  G.sel = { main: null, plus: [], target: null, goods: null };
+  G.defs = {};
+  registerDefs(CARDS);
+
+  G.players = cfg.players.map((x, i) => {
+    const p = makePlayer(i, x.name, x.avatar, x.ctrl);
+    p.cid = x.cid;
+    p.packName = x.pack ? x.pack.name : '';
+    p.packDefs = x.pack && x.pack.cards.length ? nsCards(x.pack.cards, `p${i}`) : [];
+    registerDefs(p.packDefs);
+    return p;
+  });
+
+  // 덱 구성
+  G.shared = { deck: [], discard: [] };
+  if (G.deckMode === 'personal') {
+    for (const p of G.players) {
+      const defs = p.packDefs.length ? p.packDefs : null;
+      p.pile = { deck: shuffle(defs ? instances(defs) : cpuPackDefs().map((c) => ({ ...c, uid: uidSeq++ }))), discard: [] };
+    }
+  } else {
+    const extra = G.deckMode === 'mixed' ? G.players.flatMap((p) => p.packDefs) : [];
+    G.shared.deck = shuffle(instances([...CARDS, ...extra]));
+  }
+  G.players.forEach((p) => drawCards(p, RULES.startHand));
+  G.current = rand(G.players.length);
+
+  if (cfg.onReady) cfg.onReady();
+  enterGameScreen();
+  log(`<b>전투 개시.</b> ${G.players[G.current].name}부터 시작합니다.` +
+    (G.deckMode === 'personal' ? ' <span class="muted">(개인 덱)</span>' : ''));
+  renderAll();
+  runGame();
+}

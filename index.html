@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Anomaly Field</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- 타이틀 -->
+  <section id="title" class="screen show">
+    <div class="title-wrap">
+      <div class="logo">
+        <div class="logo-sub">THE CITY · DISTRICT 00</div>
+        <h1>ANOMALY FIELD</h1>
+        <div class="logo-kr">이상현상 결투장</div>
+      </div>
+      <p class="tagline">이상현상에서 추출한 장비를 손에 들고, 마지막 한 사람이 남을 때까지 싸우세요.</p>
+
+      <div class="form">
+        <label>이름 <input id="in-name" maxlength="10" placeholder="관리자"></label>
+        <label>상대 수
+          <select id="in-cpu">
+            <option value="1">1명</option><option value="2">2명</option>
+            <option value="3" selected>3명</option><option value="4">4명</option><option value="5">5명</option>
+          </select>
+        </label>
+        <label>난이도
+          <select id="in-diff">
+            <option value="easy">쉬움</option><option value="normal" selected>보통</option><option value="hard">어려움</option>
+          </select>
+        </label>
+        <label>덱 구성
+          <select id="in-deck">
+            <option value="base">기본 카드만</option>
+            <option value="mixed" selected>기본 + 내 카드팩</option>
+            <option value="personal">개인 덱 (나: 내 팩 / CPU: 같은 코스트의 기본 덱)</option>
+          </select>
+        </label>
+        <label>내 카드팩 <select id="in-pack"></select></label>
+        <label>속도
+          <select id="in-speed">
+            <option value="1.6">느림</option><option value="1" selected>보통</option><option value="0.5">빠름</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="title-btns">
+        <button class="btn primary big" id="btn-start">출근하기</button>
+        <button class="btn big" id="btn-multi">🌐 멀티 플레이</button>
+      </div>
+      <div class="title-btns">
+        <button class="btn open-rules">규칙</button>
+        <button class="btn" id="btn-gallery">카드 도감</button>
+        <button class="btn" id="btn-workshop">🛠 카드 공방</button>
+      </div>
+      <div id="custom-info" class="muted small"></div>
+      <div id="stats" class="muted"></div>
+    </div>
+  </section>
+
+  <!-- 멀티 플레이 -->
+  <section id="multi" class="screen">
+    <header class="topbar">
+      <div class="brand">🌐 멀티 플레이</div>
+      <div class="spacer"></div>
+      <button class="btn small" id="mp-back">← 타이틀</button>
+    </header>
+
+    <div id="mp-entry" class="mp-panel">
+      <div class="form">
+        <label>이름 <input id="mp-name" maxlength="10" placeholder="관리자"></label>
+        <label>내 카드팩 <select id="mp-pack"></select></label>
+        <label>연결 방식
+          <select id="mp-kind">
+            <option value="online" selected>온라인 (방 코드로 접속)</option>
+            <option value="local">같은 브라우저의 다른 탭</option>
+          </select>
+        </label>
+      </div>
+      <div class="mp-actions">
+        <div class="mp-box">
+          <h3>방 만들기</h3>
+          <p class="muted small">방을 만들면 5자리 코드가 나옵니다. 친구에게 알려 주세요.</p>
+          <button class="btn primary" id="mp-host">방 만들기</button>
+        </div>
+        <div class="mp-box">
+          <h3>참가하기</h3>
+          <p class="muted small">친구에게 받은 방 코드를 입력하세요.</p>
+          <div class="mp-join">
+            <input id="mp-code" maxlength="5" placeholder="ABCDE" autocomplete="off">
+            <button class="btn primary" id="mp-join">참가</button>
+          </div>
+        </div>
+      </div>
+      <p class="muted small mp-note">온라인 모드는 서버 없이 브라우저끼리 직접(P2P) 연결합니다. 처음 연결할 때만 공용 중계 서버(PeerJS)를 거칩니다.
+        회사·학교 네트워크처럼 막힌 환경에서는 연결이 안 될 수 있습니다. 게임은 방장 브라우저에서 진행되니 방장은 창을 닫지 마세요.</p>
+      <div id="mp-status" class="muted"></div>
+    </div>
+
+    <div id="mp-room" class="mp-panel" style="display:none">
+      <div class="mp-code-row">
+        <span class="muted">방 코드</span>
+        <b id="mp-roomcode" class="mp-roomcode"></b>
+        <button class="btn small" id="mp-copy">복사</button>
+        <span id="mp-kindtag" class="muted small"></span>
+      </div>
+      <div id="mp-players"></div>
+      <div class="form mp-settings">
+        <label>덱 방식
+          <select id="mp-deck">
+            <option value="base">기본 카드만 (공용 덱)</option>
+            <option value="mixed" selected>기본 + 모두의 카드팩 (공용 덱)</option>
+            <option value="personal">개인 덱 (각자 자기 팩)</option>
+          </select>
+        </label>
+        <label class="chk"><input type="checkbox" id="mp-cost" checked> 팩 코스트 상한 적용</label>
+        <label>CPU 수
+          <select id="mp-cpus">
+            <option value="0" selected>0</option><option value="1">1</option><option value="2">2</option>
+            <option value="3">3</option><option value="4">4</option>
+          </select>
+        </label>
+        <label>CPU 난이도
+          <select id="mp-diff">
+            <option value="easy">쉬움</option><option value="normal" selected>보통</option><option value="hard">어려움</option>
+          </select>
+        </label>
+        <label>속도
+          <select id="mp-speed">
+            <option value="1.6">느림</option><option value="1" selected>보통</option><option value="0.5">빠름</option>
+          </select>
+        </label>
+      </div>
+      <div id="mp-decknote" class="muted small"></div>
+      <div id="mp-problem" class="neg small"></div>
+      <div class="title-btns">
+        <button class="btn primary big" id="mp-start">게임 시작</button>
+        <button class="btn" id="mp-leave">방 나가기</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 카드 공방 -->
+  <section id="workshop" class="screen">
+    <header class="topbar">
+      <div class="brand">🛠 카드 공방</div>
+      <div class="muted small">카드팩은 이 브라우저에 저장됩니다. 내보내기로 백업·공유하세요</div>
+      <div class="spacer"></div>
+      <button class="btn small" id="ws-back">← 타이틀</button>
+    </header>
+    <div class="ws-packbar">
+      <label>카드팩 <select id="ws-pack"></select></label>
+      <button class="btn small" id="ws-pack-new">+ 새 팩</button>
+      <button class="btn small" id="ws-pack-rename">이름 바꾸기</button>
+      <button class="btn small" id="ws-pack-del">팩 삭제</button>
+      <button class="btn small" id="ws-export">⬇ 팩 내보내기</button>
+      <label class="btn small">⬆ 팩 가져오기<input type="file" accept="application/json,.json" id="ws-import" hidden></label>
+      <div id="ws-pack-info" class="small"></div>
+    </div>
+    <div class="ws-wrap">
+      <aside class="ws-side">
+        <div class="ws-tools">
+          <button class="btn small" id="ws-new">+ 새 카드</button>
+        </div>
+        <div id="ws-list"></div>
+      </aside>
+      <main class="ws-main">
+        <div id="ws-preview"></div>
+        <div id="ws-form"></div>
+        <div class="ws-actions">
+          <button class="btn primary" id="ws-save">💾 저장</button>
+          <button class="btn" id="ws-copy">복제</button>
+          <button class="btn" id="ws-del">삭제</button>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- 게임 -->
+  <section id="game" class="screen">
+    <header class="topbar">
+      <div class="brand">ANOMALY FIELD</div>
+      <div id="round">TURN 0</div>
+      <div id="deckcount" class="muted"></div>
+      <div id="mode-tag" class="muted small"></div>
+      <div class="spacer"></div>
+      <select id="in-speed-game" title="속도">
+        <option value="1.6">느림</option><option value="1" selected>보통</option><option value="0.5">빠름</option>
+      </select>
+      <button class="btn small open-rules">규칙</button>
+    </header>
+
+    <div id="opponents"></div>
+
+    <div class="middle">
+      <div id="stage"></div>
+      <div id="log"></div>
+    </div>
+
+    <div class="bottom">
+      <div class="bottom-row">
+        <div id="me"></div>
+        <div class="controls">
+          <div id="preview"></div>
+          <div class="btns">
+            <button class="btn primary" id="btn-act">상대 차례</button>
+            <button class="btn" id="btn-cancel">선택 취소</button>
+            <button class="btn pray" id="btn-pray">🙏 기도 (턴 종료)</button>
+          </div>
+        </div>
+      </div>
+      <div id="info"></div>
+      <div id="hand"></div>
+    </div>
+  </section>
+
+  <!-- 방어 -->
+  <div id="defend" class="modal"><div class="def-box"></div></div>
+
+  <!-- 거래 (매입 / 환전) -->
+  <div id="dialog" class="modal"><div class="dlg-box panel"></div></div>
+
+  <!-- 결과 -->
+  <div id="result" class="modal">
+    <div class="panel">
+      <h2 id="result-title"></h2>
+      <div id="result-body"></div>
+      <div class="title-btns">
+        <button class="btn primary" id="btn-again">다시 하기</button>
+        <button class="btn" id="btn-title">타이틀로</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 규칙 -->
+  <div id="rules" class="modal">
+    <div class="panel rules">
+      <h2>규칙</h2>
+      <ul>
+        <li>모든 플레이어는 <b>HP 100</b>, <b>정신력 0</b>, <b>흐트러짐 40</b>, <b>20원</b>, 카드 7장으로 시작합니다. HP가 0이 되면 탈락, 마지막 1명이 승리합니다.</li>
+        <li>자기 턴이 시작되면 카드를 1장 뽑습니다. (손패 최대 10장)</li>
+        <li><b>무기</b>로 상대 1명을 공격합니다. <b>보조</b> 표시가 있는 무기는 다른 무기에 덧붙여 공격력을 합칠 수 있습니다. 공격하면 턴이 끝납니다.</li>
+        <li><b>합 (무기 vs 방어구)</b> — 공격 위력 = 공격력 + 코인(기본 3개, 앞면당 +2). 공격받은 쪽이 <b>방어구</b>를 내면 합이 벌어집니다. 방어 위력 = 방어력 합계 + 코인.
+          공격이 이기면 <b>차이만큼</b> 피해, 방어가 이기면 완전히 막고, 같으면 상쇄. 방어구를 안 내면 공격 위력 그대로 맞습니다.</li>
+        <li>방어구는 공격과 <b>같은 속성</b> 또는 <b>전속성</b>일 때만 낼 수 있습니다. 속성: ⚔물리 · 🔥화염 · ❄냉기 · ✦광휘 · ☾그림자</li>
+        <li><b>💢 흐트러짐</b> — 피격 피해만큼 흐트러짐 게이지(40)가 줄고, 0이 되면 <b>흐트러짐</b>: 다음 턴을 쉬고, 그동안 <b>방어구를 낼 수 없으며 받는 피해가 1.5배</b>가 됩니다.
+          쉬는 턴이 끝나면 게이지가 가득 찹니다. 자기 턴이 올 때마다 게이지 +5. 〰진동 폭발과 「흐트러짐 피해」 효과로도 깎입니다.</li>
+        <li><b>정신력(SP)</b> — -45 ~ +45. <b>코인 앞면 확률 = 50% + 정신력%</b> (최소 5%, 최대 95%).
+          적중 +5, 합 승리 +5, 처치 +15, 기도 +10 / 피격 시 피해의 절반만큼 감소, 합 패배 -5, 누군가 쓰러지면 -5.
+          <b>-45가 되면 공황</b>: 다음 턴을 쉬고 정신력이 0으로 돌아옵니다.</li>
+        <li><b>E.G.O</b>는 <b>정신력을 소모</b>합니다 (정신력이 -45 아래로 떨어지면 사용 불가). 공격·강탈·기절은 턴을 끝내고, 회복·정화는 턴을 끝내지 않습니다.</li>
+        <li><b>도구</b>는 턴을 끝내지 않고 자유롭게 쓸 수 있습니다 (상대를 대상으로 하는 도구는 턴 종료).</li>
+        <li><b>돈(원)</b> — 모든 카드에는 <b>가격</b>이 있고(E.G.O는 0원), 돈은 <b>거래 카드</b>로 사고팔 때 씁니다. 최대 99원.
+          <ul>
+            <li><b>🛒 매입</b>: 상대 손패에서 무작위로 1장이 공개되고, 살지 말지 고릅니다. 사면 그 가격을 상대에게 내고 가져옵니다. (턴 종료)</li>
+            <li><b>💸 강매</b>: 내 카드 1장을 골라 상대에게 강제로 팝니다. 상대는 돈으로 내고, 돈이 모자라면 <b>정신력(0까지) → HP</b> 순으로 냅니다. (턴 종료)</li>
+            <li><b>💱 환전</b>: HP·정신력·돈을 1:1로 자유롭게 다시 나눕니다. 합계는 그대로. 정신력은 0 아래로 내릴 수 없습니다. (턴 유지)</li>
+          </ul></li>
+        <li>할 게 없으면 <b>기도</b>: 카드 1장 + 정신력 10을 얻고 턴을 마칩니다. 손패가 가득 차 있으면 가장 쓸모없는 카드 1장을 버리고 뽑습니다.</li>
+        <li><b>키워드</b> — 대부분 <b>위력/횟수</b>를 가집니다. 다시 부여하면 위력과 횟수가 각각 더해지고, 횟수가 0이 되면 사라집니다.
+          <ul>
+            <li>🔥 <b>화상</b>: 턴 시작 시 위력만큼 피해, 횟수 -1</li>
+            <li>🩸 <b>출혈</b>: 공격할 때마다 위력만큼 피해, 횟수 -1</li>
+            <li>〰 <b>진동</b>: 「진동 폭발」을 당하면 위력만큼 <b>흐트러짐 피해</b>. 턴 종료 시 횟수 -1</li>
+            <li>💥 <b>파열</b>: 피격될 때마다 위력만큼 추가 피해, 횟수 -1</li>
+            <li>🌊 <b>침잠</b>: 피격될 때마다 위력만큼 정신력 감소(정신력이 바닥이면 대신 피해), 횟수 -1</li>
+            <li>🌬 <b>호흡</b> (자신): 적중 시 위력×5% 확률로 치명타(피해 1.2배), 치명타가 나면 횟수 -1. 턴 종료 시 횟수 -1</li>
+            <li>⚡ <b>충전</b> (자신): 최대 20. 「충전 소모」 코인 효과에 쓰임. 턴 종료 시 -1</li>
+            <li>💔 취약: 방어력 절반 · 💫 기절: 다음 턴 건너뜀 · 😱 공황: 다음 턴 건너뜀</li>
+          </ul></li>
+        <li><b>코인</b> — 카드마다 코인 개수와 코인별 위력·효과가 다를 수 있습니다. 「앞면 적중 시」 효과는 그 코인이 앞면이고 공격이 적중했을 때만 발동합니다.</li>
+        <li><b>코스트</b> — 모든 카드는 스펙(위력·코인·효과·특수 능력)에 따라 자동으로 <b>코스트 1~12</b>가 매겨집니다 (카드 왼쪽 위 숫자).
+          카드팩의 코스트 합계(코스트 × 장수)는 <b>150 이하</b>여야 대전 규격입니다. 센 카드를 넣으면 넣을 수 있는 장수가 줄어듭니다. 개인 덱은 20장 이상 필요.</li>
+        <li><b>🛠 카드 공방</b> — 카드팩을 여러 개 만들고, 종류·사진·코인별 위력과 효과를 정해 카드를 만들 수 있습니다.</li>
+        <li><b>🌐 멀티 플레이</b> — 방을 만들고 코드를 공유하면 친구와 대전할 수 있습니다. 덱 방식: 공용 덱(모두 같은 덱에서 뽑기) 또는 개인 덱(각자 자기 팩).</li>
+        <li><b>🌙 뒷골목의 밤</b> — 100턴(모든 플레이어 턴 합산)부터 시작. 카드를 뽑을 때 30% 확률로 카드 대신
+          <b>🧹 청소부</b>(10 / 20 / 30 피해) 또는 <b>🛢 연료통</b>(HP 10 / 정신력 10 / 10원 중 하나)이 나옵니다.</li>
+      </ul>
+      <button class="btn primary" id="rules-close">확인</button>
+    </div>
+  </div>
+
+  <!-- 도감 -->
+  <div id="gallery" class="modal">
+    <div class="panel gallery">
+      <h2>카드 도감</h2>
+      <div id="gallery-list"></div>
+      <button class="btn primary" id="gallery-close">닫기</button>
+    </div>
+  </div>
+
+  <div id="toasts"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/keywords.js"></script>
+  <script src="js/cost.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/editor.js"></script>
+  <script src="js/net.js"></script>
+</body>
+</html>
