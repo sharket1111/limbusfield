@@ -3,7 +3,7 @@
 // ============================================================
 'use strict';
 
-const TYPE_NAME = { weapon: '무기', armor: '방어구', ego: 'E.G.O', item: '도구', trade: '거래' };
+const TYPE_NAME = { weapon: '무기', armor: '수비', ego: 'E.G.O', item: '도구', trade: '거래' };
 const resetSel = (keepTarget = false) => {
   G.sel = { main: null, plus: [], target: keepTarget ? G.sel.target : null, goods: null };
 };
@@ -15,13 +15,15 @@ function cardHTML(c, opt = {}) {
   const a = ATTR[c.attr] || null;
   let stat = '';
   if (c.type === 'weapon') stat = `<div class="c-stat atk">${c.atk}</div>`;
-  else if (c.type === 'armor') stat = `<div class="c-stat def">${c.def}</div>`;
+  else if (c.type === 'armor') stat = `<div class="c-stat def k-${defKind(c)}">${c.def}</div>`;
   else if (c.type === 'ego') stat = `<div class="c-stat egoc">${c.cost}<small>SP</small></div>`;
   else if (c.type === 'trade') stat = `<div class="c-stat trd">${{ buy: '🛒', sell: '💸', exchange: '💱' }[c.kind]}</div>`;
   else stat = `<div class="c-stat itm">◆</div>`;
 
   let sub = '';
-  if (c.type === 'ego') {
+  if (c.type === 'armor') {
+    sub = { guard: '🛡 가드', evade: '💨 회피', counter: '↩ 반격' }[defKind(c)];
+  } else if (c.type === 'ego') {
     sub = { attack: `${c.power} 위력`, heal: `HP +${c.power}`, cure: '상태 해제', steal: '카드 강탈', stun: '기절' }[c.kind];
   } else if (c.type === 'trade') {
     sub = { buy: '매입', sell: '강매', exchange: '환전' }[c.kind];
@@ -55,7 +57,7 @@ function describeCard(c) {
   const a = ATTR[c.attr];
   const parts = [`코스트 ${cardCost(c)}`];
   if (c.type === 'weapon') parts.push(`공격력 ${c.atk}`);
-  if (c.type === 'armor') parts.push(`방어력 ${c.def}`);
+  if (c.type === 'armor') parts.push(`${DEF_KIND[defKind(c)]} · 수비 위력 ${c.def}`);
   if (c.type === 'ego') parts.push(`위력 ${c.power} · 정신력 ${c.cost} 소모`);
   if (a) parts.push(`${a.icon} ${a.name}`);
   fxOf(c).forEach((f) => parts.push(FX_TEXT[f]));
@@ -70,6 +72,9 @@ function describeCard(c) {
     });
   } else if (['weapon', 'ego', 'armor'].includes(c.type)) {
     lines.push(`🪙 기본 코인 ${RULES.coins}개 (+${RULES.coinPower})`);
+  }
+  if (c.type === 'armor' && defKind(c) === 'guard' && Array.isArray(c.coins) && c.coins.length) {
+    lines.push('🛡 가드는 기본 코인에 이 코인들이 더해집니다');
   }
   return { head: parts.join(' · '), lines };
 }
@@ -248,7 +253,7 @@ function onHandClick(uid) {
   } else if (card.type === 'weapon' && s.main && s.main.type === 'weapon' && card.plus) {
     s.plus.push(card);
   } else if (card.type === 'armor') {
-    toast('방어구는 공격을 받을 때 사용합니다');
+    toast('수비 카드(가드·회피·반격)는 공격을 받을 때 사용합니다');
   } else {
     G.sel = { main: card, plus: [], target: s.target, goods: null };
   }
@@ -404,27 +409,61 @@ function humanExchange(p) {
   });
 }
 
-// 방어 선택 창 — 방어구를 내면 무기 vs 방어구 합
+// 대응 선택 창 — 합(무기) / 가드(여러 장) / 회피 / 반격
 function humanDefend(p, attacker, info) {
-  const armors = p.hand.filter((c) => c && c.type === 'armor');
-  if (!armors.length) return Promise.resolve([]);
+  const hand = p.hand.filter(Boolean);
+  const weapons = hand.filter((c) => c.type === 'weapon');
+  const defs = hand.filter((c) => c.type === 'armor');
+  if (!weapons.length && !defs.length) return Promise.resolve({ mode: 'none', cards: [] });
+  const pierce = info.fx.includes('pierce');
+  const canUse = (c) => c.type === 'weapon' || (armorMatches(c, info.attr) && !(defKind(c) === 'guard' && pierce));
+  const kindOf = (c) => (c.type === 'weapon' ? 'clash' : defKind(c));
   return new Promise((res) => {
-    const chosen = new Set();
+    let mode = 'none';
+    let picked = [];
     const modal = $('#defend');
     const a = ATTR[info.attr];
+    const pct = (x) => Math.round(x * 100) + '%';
+
+    const toggle = (c) => {
+      const k = kindOf(c);
+      if (picked.includes(c)) {
+        picked = picked.filter((x) => x !== c);
+        if (!picked.length) mode = 'none';
+        return;
+      }
+      if (k !== mode) { picked = []; mode = k; }
+      if (k === 'clash') picked = picked.length && c.plus ? [...picked, c] : [c];
+      else if (k === 'guard') picked.push(c);
+      else picked = [c];
+    };
+
+    const preview = () => {
+      if (mode === 'none') {
+        const st = clashStats(info.atk, info.coins, attacker.sp, 0, [], p.sp, false);
+        return `대응하지 않으면 — 피해 <b class="neg">${info.atk} ~ ${info.atk + info.coinMax}</b> (평균 ${st.expA.toFixed(1)})`;
+      }
+      if (mode === 'clash') {
+        const dinfo = buildAttack(picked);
+        const st = clashStats(info.atk, info.coins, attacker.sp, dinfo.atk, dinfo.coins, p.sp, true);
+        return `합 승률 <b class="pos">${pct(st.win)}</b> · 무승부 ${pct(st.tie)} · 패배 <b class="neg">${pct(st.lose)}</b>
+          <div class="small">이기면 차이만큼 상대에게 피해(평균 <b class="pos">${(st.win ? st.expD / st.win : 0).toFixed(1)}</b>) · 지면 차이만큼 받음(평균 <b class="neg">${(st.lose ? st.exp / st.lose : 0).toFixed(1)}</b>)</div>`;
+      }
+      if (picked.some((c) => hasFx(c, 'nullify'))) return '공격을 <b class="pos">무효화</b>합니다';
+      const st = clashStats(info.atk, info.coins, attacker.sp, armorDef(p, picked), defenseCoins(picked), p.sp, true);
+      const ok = st.win + st.tie;
+      if (mode === 'guard') return `완전 방어 <b class="pos">${pct(ok)}</b> · 예상 피해 평균 <b class="neg">${st.exp.toFixed(1)}</b> · 최대 ${st.max}`;
+      if (mode === 'evade') return `회피 성공 <b class="pos">${pct(ok)}</b> — 실패하면 공격을 그대로 받음 (평균 <b class="neg">${st.expA.toFixed(1)}</b>)`;
+      const dpow = armorDef(p, picked) + defenseCoins(picked).reduce((sum, c) => sum + c.power * headChance(p.sp), 0);
+      return `반격 성공 <b class="pos">${pct(ok)}</b> — 성공하면 약 <b class="pos">${dpow.toFixed(0)}</b> 피해로 되받아침 · 실패하면 그대로 받음 (평균 <b class="neg">${st.expA.toFixed(1)}</b>)`;
+    };
+
+    const section = (title, hint, list) => (list.length ? `
+      <h3>${title} <span class="muted small">${hint}</span></h3>
+      <div class="def-cards">${list.map((c) => `<div class="def-slot ${canUse(c) ? '' : 'disabled'} ${picked.includes(c) ? 'chosen' : ''}" data-uid="${c.uid}">${cardHTML(c)}</div>`).join('')}</div>` : '');
 
     const draw = () => {
-      const picked = armors.filter((c) => chosen.has(c.uid));
-      let preview;
-      if (picked.some((c) => hasFx(c, 'nullify'))) {
-        preview = '공격을 <b class="pos">무효화</b>합니다';
-      } else {
-        const st = clashStats(info.atk, info.coins, attacker.sp, armorDef(p, picked), defenseCoins(picked), p.sp, picked.length > 0);
-        preview = picked.length
-          ? `합 승률 <b class="pos">${Math.round(st.win * 100)}%</b> · 무승부 ${Math.round(st.tie * 100)}% · 패배 <b class="neg">${Math.round(st.lose * 100)}%</b>
-             <div>예상 피해 평균 <b class="neg">${st.exp.toFixed(1)}</b> · 최대 ${st.max} <span class="muted">(현재 HP ${p.hp} · 흐트러짐 ${p.stg})</span></div>`
-          : `무방비 — 피해 <b class="neg">${info.atk} ~ ${info.atk + info.coinMax}</b> (평균 ${st.exp.toFixed(1)}) <span class="muted">(현재 HP ${p.hp} · 흐트러짐 ${p.stg})</span>`;
-      }
+      const btn = { none: '그대로 받기', clash: '⚔ 합!', guard: '🛡 가드', evade: '💨 회피', counter: '↩ 반격' }[mode];
       modal.querySelector('.def-box').innerHTML = `
         <h2>공격받고 있습니다!</h2>
         <div class="def-attack">
@@ -433,27 +472,24 @@ function humanDefend(p, attacker, info) {
           ${info.fx.length ? `<div class="muted">${info.fx.map((f) => FX_TEXT[f]).join(' · ')}</div>` : ''}
           ${info.effects.length ? `<div class="muted small">${info.effects.map((e) => effectText(e)).join(' · ')}</div>` : ''}
         </div>
-        <div class="sp-line">정신력 — 나 <b>${p.sp}</b> (앞면 ${Math.round(headChance(p.sp) * 100)}%) · 상대 <b>${attacker.sp}</b> (앞면 ${Math.round(headChance(attacker.sp) * 100)}%)</div>
-        <h3>🛡 방어구로 합 <span class="muted small">${a.name} 또는 전속성만 · 방어 위력 = 방어력 합계 + 코인${has(p, 'fragile') ? ' · <span class="neg">💔 취약: 방어력 절반</span>' : ''}</span></h3>
-        <div class="def-cards">${armors.map((c) => {
-          const ok = armorMatches(c, info.attr);
-          return `<div class="def-slot ${ok ? '' : 'disabled'} ${chosen.has(c.uid) ? 'chosen' : ''}" data-uid="${c.uid}">${cardHTML(c)}</div>`;
-        }).join('')}</div>
-        <div class="def-preview">${preview}</div>
-        <div class="def-actions">
-          <button class="btn primary" id="def-ok">${picked.length ? '⚔ 합!' : '그대로 받기'}</button>
-        </div>`;
+        <div class="sp-line">정신력 — 나 <b>${p.sp}</b> (앞면 ${pct(headChance(p.sp))}) · 상대 <b>${attacker.sp}</b> (앞면 ${pct(headChance(attacker.sp))})${has(p, 'fragile') ? ' · <span class="neg">💔 취약: 수비 위력 절반</span>' : ''}</div>
+        ${section('⚔ 합', '무기로 맞받아치기 · 이긴 쪽이 차이만큼 피해 · 보조 무기 덧붙이기 가능', weapons)}
+        ${section('🛡 가드', `여러 장 동시에 · 피해 = 공격 위력 − 가드 위력${pierce ? ' · <span class="neg">관통 공격은 가드 불가</span>' : ''}`, defs.filter((c) => defKind(c) === 'guard'))}
+        ${section('💨 회피', '1장 · 이기면 피해 0, 지면 전부 받음', defs.filter((c) => defKind(c) === 'evade'))}
+        ${section('↩ 반격', '1장 · 이기면 반격 피해, 지면 전부 받음', defs.filter((c) => defKind(c) === 'counter'))}
+        <div class="muted small">수비 카드는 ${a.name} 또는 전속성만 쓸 수 있습니다.</div>
+        <div class="def-preview">${preview()}</div>
+        <div class="def-actions"><button class="btn primary" id="def-ok">${btn}</button></div>`;
       $$('.def-slot', modal).forEach((el) => {
         el.onclick = () => {
           if (el.classList.contains('disabled')) return;
-          const uid = +el.dataset.uid;
-          chosen.has(uid) ? chosen.delete(uid) : chosen.add(uid);
-          draw();
+          const c = hand.find((x) => x.uid === +el.dataset.uid);
+          if (c) { toggle(c); draw(); }
         };
       });
       $('#def-ok').onclick = () => {
         modal.classList.remove('show');
-        res(armors.filter((c) => chosen.has(c.uid)));
+        res({ mode, cards: [...picked] });
       };
     };
     draw();

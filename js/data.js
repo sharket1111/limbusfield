@@ -8,7 +8,7 @@
 //  rarity : 1 일반 / 2 희귀 / 3 전설 (테두리 색만 다름)
 //
 //  weapon : atk, plus(보조 무기 — 다른 무기에 덧붙일 수 있음), fx(특수효과)
-//  armor  : def, fx
+//  armor  : (수비 스킬) kind: guard(가드)|evade(회피)|counter(반격), def(수비 위력), fx
 //  ego    : cost(소모 정신력), kind: attack|heal|cure|steal|stun, power, fx
 //  item   : kind: heal|sp|won|cure|draw|gamble, power
 //  trade  : kind: buy(매입)|sell(매각)|exchange(환전) — 상대가 막을 수 없음
@@ -17,15 +17,15 @@
 //  effects: (선택) 카드 효과 [{ when: use|hit, target: enemy|self, key, pot, cnt }] — 키워드는 js/keywords.js 참고
 //
 //  fx 목록 (특수 능력)
-//    pierce     : 방어구 무시 (합 불가)
+//    pierce     : 관통 — 가드 불가 (합·회피·반격은 가능)
 //    lifesteal  : 준 피해의 절반만큼 회복
 //    drainsp    : 대상 정신력 10 흡수
 //    mind       : 피해를 입힌 대상의 정신력 -10
 //    all        : 다른 모든 플레이어 공격
 //    twice      : 같은 대상에게 2회 공격
 //    holy       : 공격 후 자신 HP 5 회복
-//    reflect    : (방어구) 합에서 이기면 막은 피해의 절반을 공격자에게 되돌림
-//    nullify    : (방어구) 합 없이 공격을 완전히 무효화 (관통 제외)
+//    reflect    : (가드) 막아낸 피해의 절반을 공격자에게 되돌림
+//    nullify    : (가드) 공격을 완전히 무효화 (관통 제외)
 // ============================================================
 
 const ATTR = {
@@ -115,26 +115,36 @@ const CARDS = [
     flavor: '한 사람의 열망이 도시 한 블록을 태웠다.' },
 
   // ---------------- 방어구 ----------------
-  { id: 'a_badge',    type: 'armor', name: '사원증 목걸이',      attr: 'all',    def: 4,  count: 5, price: 2, rarity: 1,
+  { id: 'a_badge',    type: 'armor', kind: 'guard', name: '사원증 목걸이',      attr: 'all',    def: 4,  count: 5, price: 2, rarity: 1,
     flavor: '적어도 신원 확인은 된다.' },
-  { id: 'a_suit',     type: 'armor', name: '방탄 정장',          attr: 'phys',   def: 8,  count: 6, price: 4, rarity: 1,
+  { id: 'a_suit',     type: 'armor', kind: 'guard', name: '방탄 정장',          attr: 'phys',   def: 8,  count: 6, price: 4, rarity: 1,
     flavor: '해결사 사무소 표준 복장.' },
-  { id: 'a_coat',     type: 'armor', name: '방화 코트',          attr: 'fire',   def: 12, count: 3, price: 6, rarity: 1,
+  { id: 'a_coat',     type: 'armor', kind: 'guard', name: '방화 코트',          attr: 'fire',   def: 12, count: 3, price: 6, rarity: 1,
     flavor: '그을음 냄새가 빠지지 않는다.' },
-  { id: 'a_cloak',    type: 'armor', name: '눈보라 망토',        attr: 'frost',  def: 12, count: 3, price: 6, rarity: 1,
+  { id: 'a_cloak',    type: 'armor', kind: 'evade', name: '눈보라 망토',        attr: 'frost',  def: 12, count: 3, price: 6, rarity: 1,
     flavor: '추위를 추위로 막는다.' },
-  { id: 'a_goggle',   type: 'armor', name: '차광 고글',          attr: 'light',  def: 12, count: 3, price: 6, rarity: 1,
+  { id: 'a_goggle',   type: 'armor', kind: 'counter', name: '차광 고글',          attr: 'light',  def: 12, count: 3, price: 6, rarity: 1,
     flavor: '너무 밝은 것은 보지 않는 편이 낫다.' },
-  { id: 'a_veil',     type: 'armor', name: '그림자 장막',        attr: 'shadow', def: 12, count: 3, price: 6, rarity: 1,
+  { id: 'a_veil',     type: 'armor', kind: 'evade', name: '그림자 장막',        attr: 'shadow', def: 12, count: 3, price: 6, rarity: 1,
     flavor: '보이지 않으면 해칠 수도 없다.' },
-  { id: 'a_shield',   type: 'armor', name: '강화 진압 방패',      attr: 'phys',   def: 14, count: 3, price: 8, rarity: 2,
+  { id: 'a_shield',   type: 'armor', kind: 'guard', name: '강화 진압 방패',      attr: 'phys',   def: 14, count: 3, price: 8, rarity: 2,
     flavor: '경비 부서에서 몰래 가져왔다.' },
-  { id: 'a_umbrella', type: 'armor', name: '찢어진 장우산',      attr: 'all',    def: 6,  count: 4, price: 3, rarity: 1,
+  { id: 'a_umbrella', type: 'armor', kind: 'guard', name: '찢어진 장우산',      attr: 'all',    def: 6,  count: 4, price: 3, rarity: 1,
     flavor: '비는 못 막아도 칼은 조금 막는다.' },
-  { id: 'a_mirror',   type: 'armor', name: '되묻는 거울',        attr: 'all',    def: 8,  count: 2, price: 10, rarity: 2, fx: ['reflect'],
+  { id: 'a_mirror',   type: 'armor', kind: 'guard', name: '되묻는 거울',        attr: 'all',    def: 8,  count: 2, price: 10, rarity: 2, fx: ['reflect'],
     flavor: '“그건 당신 이야기 아닌가요?”' },
-  { id: 'a_charm',    type: 'armor', name: '무효 결재 도장',     attr: 'all',    def: 0,  count: 1, price: 15, rarity: 3, fx: ['nullify'],
+  { id: 'a_charm',    type: 'armor', kind: 'guard', name: '무효 결재 도장',     attr: 'all',    def: 0,  count: 1, price: 15, rarity: 3, fx: ['nullify'],
     flavor: '반려. 그 공격은 없었던 일이 된다.' },
+  { id: 'd_step',     type: 'armor', kind: 'evade',   name: '뒷걸음질 스텝',     attr: 'all',    def: 9,  count: 3, price: 4, rarity: 1,
+    flavor: '맞서지 않는다. 그저 반 발짝 물러설 뿐.' },
+  { id: 'd_parry',    type: 'armor', kind: 'counter', name: '받아치기 자세',     attr: 'phys',   def: 11, count: 3, price: 6, rarity: 1,
+    flavor: '들어오는 힘을 그대로 돌려준다.' },
+  { id: 'd_ember',    type: 'armor', kind: 'counter', name: '불씨 되받기',       attr: 'fire',   def: 10, count: 2, price: 6, rarity: 2,
+    effects: [{ when: 'hit', target: 'enemy', key: 'burn', pot: 3, cnt: 2 }],
+    flavor: '불은 불로 갚는다.' },
+  { id: 'd_mist',     type: 'armor', kind: 'evade',   name: '안개 걸음',         attr: 'all',    def: 7,  count: 2, price: 5, rarity: 2,
+    coins: [{ power: 3, fx: [] }, { power: 3, fx: [] }, { power: 3, fx: [{ when: 'heads', target: 'self', key: 'poise', pot: 2, cnt: 1 }] }],
+    flavor: '골목 안개 속으로 녹아든다.' },
 
   // ---------------- E.G.O (정신력 소모) ----------------
   { id: 'e_flame',    type: 'ego', name: '소각 의식',     kind: 'attack', attr: 'fire',   cost: 10, power: 12, count: 2, price: 0, rarity: 1, effects: [{ when: 'hit', target: 'enemy', key: 'burn', pot: 4, cnt: 2 }],

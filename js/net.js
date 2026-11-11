@@ -332,8 +332,9 @@ const Net = {
     });
   },
   async askDefend(p, attacker, info) {
-    const uids = await this.ask(p, 'defend', { attackerId: attacker.id, cards: info.cards.map(cardRef) }, RULES.defendTimeout, []);
-    return (Array.isArray(uids) ? uids : []).map((u) => p.hand.find((c) => c.uid === u)).filter(Boolean);
+    const r = await this.ask(p, 'defend', { attackerId: attacker.id, cards: info.cards.map(cardRef) }, RULES.defendTimeout, null);
+    if (!r || typeof r !== 'object' || !Array.isArray(r.uids)) return { mode: 'none', cards: [] };
+    return { mode: String(r.mode || 'none'), cards: r.uids.map((u) => p.hand.find((c) => c.uid === u)).filter(Boolean) };
   },
   end(winner) {
     for (const p of this.remotes()) this.tp.send(p.cid, { t: 'end', winnerId: winner ? winner.id : null });
@@ -443,9 +444,9 @@ const Net = {
     } else if (m.k === 'defend') {
       const attacker = G.players.find((p) => p.id === d.attackerId);
       const cards = (d.cards || []).map(resolveCard).filter(Boolean);
-      if (!attacker || !cards.length || !me()) { reply([]); return; }
-      const armors = await humanDefend(me(), attacker, buildAttack(cards));
-      reply(armors.map((c) => c.uid));
+      if (!attacker || !cards.length || !me()) { reply(null); return; }
+      const resp = await humanDefend(me(), attacker, buildAttack(cards));
+      reply({ mode: resp.mode, uids: resp.cards.map((c) => c.uid) });
     } else if (m.k === 'buy') {
       const item = resolveCard(d.item);
       const target = G.players.find((p) => p.id === d.targetId);

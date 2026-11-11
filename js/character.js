@@ -198,8 +198,9 @@ function validateClash(d) {
   const refs = (arr) => (Array.isArray(arr) ? arr.slice(0, 8).map((r) => ({ uid: +r.uid || 0, id: String(r.id || '') })) : []);
   return {
     aId: +d.aId, dId: +d.dId,
-    mode: ['clash', 'open', 'nullify'].includes(d.mode) ? d.mode : 'open',
+    mode: ['clash', 'open', 'nullify', 'guard', 'evade', 'counter'].includes(d.mode) ? d.mode : 'open',
     result: ['atk', 'def', 'tie', 'open', 'nullify'].includes(d.result) ? d.result : 'open',
+    dmg: Math.max(0, Math.min(999, +d.dmg || 0)), dmgTo: d.dmgTo === 'a' ? 'a' : d.dmgTo === 'd' ? 'd' : '',
     aBase: +d.aBase || 0, dBase: +d.dBase || 0, pa: +d.pa || 0, pd: +d.pd || 0,
     aCoins: coins(d.aCoins), dCoins: coins(d.dCoins), aCards: refs(d.aCards), dCards: refs(d.dCards),
     gear: d.gear === 'orb' ? 'orb' : 'blade', attr: ATTR[d.attr] ? d.attr : 'phys', stag: d.stag ? 1 : 0,
@@ -274,11 +275,13 @@ function renderClash(d) {
   const attrColor = ATTR[d.attr].color;
   const aCards = d.aCards.map(resolveCard).filter(Boolean), dCards = d.dCards.map(resolveCard).filter(Boolean);
   const armorColor = dCards[0] && ATTR[dCards[0].attr] ? ATTR[dCards[0].attr].color : '#9aa4b2';
-  const dGear = d.mode === 'open' ? null : 'shield';
+  const GEAR = { open: null, evade: null, clash: 'blade', counter: 'blade', guard: 'shield', nullify: 'shield' };
+  const dGear = GEAR[d.mode];
+  const contested = ['clash', 'guard', 'evade', 'counter'].includes(d.mode);
+  const modeName = { clash: '합', guard: '가드', evade: '회피', counter: '반격', nullify: '무효화', open: '일방 공격' }[d.mode];
   const skillName = aCards.map((c) => c.name).join(' + ') || '공격';
   const lines = aCards.length ? describeCard(aCards[0]).lines.slice(0, 6) : [];
-  const est = d.mode === 'open' ? d.pa : d.result === 'atk' ? d.pa - d.pd : 0;
-  const total = d.stag ? Math.ceil(est * RULES.staggerMult) : est;
+  const total = d.stag && d.dmgTo === 'd' ? Math.ceil(d.dmg * RULES.staggerMult) : d.dmg;
   const order = G.players.filter((p) => p.alive || p.id === d.dId);
   const pips = (coins) => coins.map(() => '<i></i>').join('');
 
@@ -307,11 +310,11 @@ function renderClash(d) {
         <div class="sk-row"><div class="sk-badge"><small class="sk-bonus"></small><b class="sk-pow">${d.aBase}</b></div><div class="sk-name">${skillName}</div></div>
         <div class="sk-lines">${lines.map((l, i) => `<div class="sk-line" style="animation-delay:${(0.25 + i * 0.08) * d.spd}s">${l}</div>`).join('')}</div>
       </div>
-      ${d.mode !== 'open' ? `<div class="skill sk-d">
+      ${d.mode !== 'open' ? `<div class="skill sk-d k-${d.mode}">
         <div class="sk-pips">${pips(d.dCoins)}</div>
-        <div class="sk-row"><div class="sk-name">${dCards.map((c) => c.name).join(' + ') || '방어'}</div><div class="sk-badge def"><small class="sk-bonus"></small><b class="sk-pow">${d.mode === 'clash' ? d.dBase : '∞'}</b></div></div>
+        <div class="sk-row"><div class="sk-name"><small class="sk-kind">${modeName}</small>${dCards.map((c) => c.name).join(' + ') || '방어'}</div><div class="sk-badge def"><small class="sk-bonus"></small><b class="sk-pow">${contested ? d.dBase : '∞'}</b></div></div>
       </div>` : ''}
-      <div class="who"><b>${A.name}</b> ▶ <b>${D.name}</b> · ${d.mode === 'clash' ? '합' : d.mode === 'nullify' ? '무효화' : '일방 공격'}</div>
+      <div class="who"><b>${A.name}</b> ▶ <b>${D.name}</b> · ${modeName}</div>
       <div class="total ${total ? '' : 'none'}"><small>TOTAL</small><b>0</b></div>
       <div class="chain">${order.map((p) => `<span class="ch ${p.id === d.aId ? 'atk' : p.id === d.dId ? 'def' : ''} ${p.alive ? '' : 'dead'}">${portraitSVG(p.look)}</span>`).join('<i class="link"></i>')}</div>
       <div class="clash-banner"></div>
@@ -343,13 +346,13 @@ function renderClash(d) {
     T(380 + i * 200, () => {
       const ca = d.aCoins[i], cd = d.dCoins[i];
       if (ca) { flip(skA, ca, i); if (ca.h) { sumA += ca.p; powA.textContent = sumA; bump(powA); } }
-      if (cd && skD && d.mode === 'clash') { flip(skD, cd, i); if (cd.h) { sumD += cd.p; powD.textContent = sumD; bump(powD); } }
+      if (cd && skD && contested) { flip(skD, cd, i); if (cd.h) { sumD += cd.p; powD.textContent = sumD; bump(powD); } }
     });
   }
   const tc = 380 + n * 200 + 150;
   T(tc - 60, () => {
     powA.textContent = d.pa;
-    if (powD && d.mode === 'clash') powD.textContent = d.pd;
+    if (powD && contested) powD.textContent = d.pd;
     const bonusA = d.pa - d.aBase - d.aCoins.reduce((s, c) => s + (c.h ? c.p : 0), 0);
     if (bonusA > 0) $('.sk-bonus', skA).textContent = '+' + bonusA;
   });
@@ -360,10 +363,12 @@ function renderClash(d) {
       if (!live()) return;
       const k = Math.min(1, (t - t0) / dur);
       totalEl.textContent = Math.round(total * k);
-      const hpLeft = Math.max(0, D.hp - Math.round(total * k));
-      const bar = $('.f-plate .hp i', ar), num = $('.f-plate .hpn', ar);
-      if (bar) bar.style.width = `${(hpLeft / RULES.maxHp) * 100}%`;
-      if (num) num.textContent = hpLeft;
+      if (d.dmgTo === 'd') {
+        const hpLeft = Math.max(0, D.hp - Math.round(total * k));
+        const bar = $('.f-plate .hp i', ar), num = $('.f-plate .hpn', ar);
+        if (bar) bar.style.width = `${(hpLeft / RULES.maxHp) * 100}%`;
+        if (num) num.textContent = hpLeft;
+      }
       if (k < 1) requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
@@ -376,33 +381,52 @@ function renderClash(d) {
     T(300, () => box.classList.remove('shake'));
   };
 
+  const win = (sk) => sk && sk.classList.add('win');
+  const lose = (sk) => sk && sk.classList.add('lose');
+  const say = (t) => { banner.textContent = t; banner.classList.add('show'); };
   if (d.mode === 'clash') {
     T(tc, () => { fa.classList.add('lunge'); fd.classList.add('lunge'); });
     T(tc + 260, () => { hit(); fa.classList.add('swing'); fd.classList.add('swing'); });
     T(tc + 520, () => {
-      if (d.result === 'atk') {
-        skA.classList.add('win'); skD.classList.add('lose');
-        fa.classList.add('strike'); fd.classList.add('hurt');
-        banner.textContent = `${A.name} 합 승리`;
-        countUp();
-      } else if (d.result === 'def') {
-        skD.classList.add('win'); skA.classList.add('lose');
-        fd.classList.add('strike'); fa.classList.add('hurt');
-        banner.textContent = `${D.name} 합 승리`;
-      } else {
-        fa.classList.add('recoil'); fd.classList.add('recoil');
-        banner.textContent = '상쇄';
-      }
-      banner.classList.add('show');
+      if (d.result === 'atk') { win(skA); lose(skD); fa.classList.add('strike'); fd.classList.add('hurt'); say(`${A.name} 합 승리`); }
+      else if (d.result === 'def') { win(skD); lose(skA); fd.classList.add('strike'); fa.classList.add('hurt'); say(`${D.name} 합 승리`); }
+      else { fa.classList.add('recoil'); fd.classList.add('recoil'); say('상쇄'); }
+      countUp();
+    });
+  } else if (d.mode === 'guard') {
+    T(tc, () => { fa.classList.add('dash'); fd.classList.add('guard'); });
+    T(tc + 280, () => { fa.classList.add('swing'); hit(d.result === 'def' ? 'on-def block' : 'on-def'); });
+    T(tc + 540, () => {
+      if (d.result === 'def') { win(skD); lose(skA); fa.classList.add('recoil'); say('가드!'); }
+      else { win(skA); fd.classList.add('hurt'); say(`가드 — ${d.pd} 경감`); countUp(); }
+    });
+  } else if (d.mode === 'evade') {
+    T(tc, () => { fa.classList.add('dash'); });
+    T(tc + 280, () => {
+      fa.classList.add('swing');
+      if (d.result === 'def') { fd.classList.add('evade'); }
+      else { hit('on-def'); fd.classList.add('hurt'); }
+    });
+    T(tc + 540, () => {
+      if (d.result === 'def') { win(skD); lose(skA); say('회피!'); }
+      else { win(skA); lose(skD); say('회피 실패'); countUp(); }
+    });
+  } else if (d.mode === 'counter') {
+    T(tc, () => { fa.classList.add('dash'); });
+    T(tc + 280, () => { fa.classList.add('swing'); fd.classList.add('swing'); hit('on-def block'); });
+    T(tc + 520, () => {
+      if (d.result === 'def') { win(skD); lose(skA); fd.classList.add('strike'); fa.classList.add('hurt'); say('반격!'); }
+      else { win(skA); lose(skD); fd.classList.add('hurt'); say('반격 실패'); }
+      countUp();
     });
   } else if (d.mode === 'open') {
     T(tc, () => { fa.classList.add('dash'); });
     T(tc + 280, () => { fa.classList.add('swing'); hit('on-def'); fd.classList.add('hurt'); countUp(); });
-    T(tc + 560, () => { banner.textContent = d.stag ? '흐트러짐 — 피해 ×1.5' : '일방 공격'; banner.classList.add('show'); });
+    T(tc + 560, () => say(d.stag ? '흐트러짐 — 피해 ×1.5' : '일방 공격'));
   } else {
     T(tc, () => { fa.classList.add('dash'); fd.classList.add('guard'); });
     T(tc + 280, () => { fa.classList.add('swing'); hit('on-def block'); });
-    T(tc + 520, () => { fa.classList.add('recoil'); banner.textContent = '무효'; banner.classList.add('show'); });
+    T(tc + 520, () => { fa.classList.add('recoil'); say('무효'); });
   }
   if (full) T(clashDuration(d) - 120, () => box.classList.remove('show'));
 }

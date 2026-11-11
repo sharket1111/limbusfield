@@ -16,7 +16,7 @@ const KEYWORDS = {
   fragile: { name: '취약', icon: '💔', debuff: true,  countOnly: true, desc: '방어력 절반. 턴 종료 시 횟수 -1' },
   stun:    { name: '기절', icon: '💫', debuff: true,  countOnly: true, desc: '다음 턴을 건너뜀' },
   panic:   { name: '공황', icon: '😱', debuff: true,  countOnly: true, hidden: true, desc: '정신력 붕괴 — 다음 턴을 건너뜀' },
-  staggered: { name: '흐트러짐', icon: '💢', debuff: true, countOnly: true, hidden: true, desc: '흐트러짐 게이지가 0 — 다음 턴을 건너뛰고, 방어구를 낼 수 없으며, 받는 피해 1.5배' },
+  staggered: { name: '흐트러짐', icon: '💢', debuff: true, countOnly: true, hidden: true, desc: '흐트러짐 게이지가 0 — 다음 턴을 건너뛰고, 합·가드·회피·반격을 할 수 없으며, 받는 피해 1.5배' },
 };
 
 // 턴 종료 시 횟수가 1 줄어드는 키워드
@@ -171,7 +171,7 @@ const KW_SEL = {
 const kwName = (k) => (KEYWORDS[k] ? KEYWORDS[k].icon + KEYWORDS[k].name : k);
 
 const WHEN_TEXT = { use: '사용 시', hit: '적중 시', heads: '앞면 적중 시' };
-const WHEN_TEXT_ARMOR = { use: '방어 시', hit: '방어 성공 시', heads: '앞면일 때' };
+const WHEN_TEXT_ARMOR = { use: '수비 시', hit: '수비 성공 시', heads: '앞면일 때' };
 
 function effectText(e, armor = false) {
   const d = EFFECT_DEFS[e.key];

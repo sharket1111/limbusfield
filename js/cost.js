@@ -63,7 +63,8 @@ function cardValue(c) {
     if (c.plus) v += 1.5;
   } else if (c.type === 'armor') {
     const extra = Array.isArray(c.coins) ? coinValue(c.coins) : 0;
-    v = c.def * 0.9 + extra + eff;
+    const kind = c.kind === 'evade' || c.kind === 'counter' ? c.kind : 'guard';
+    v = c.def * { guard: 0.9, evade: 1, counter: 1.15 }[kind] + extra + eff;
     if (c.attr === 'all') v *= 1.3;
     if (fx.includes('reflect')) v += 4;
     if (fx.includes('nullify')) v += 15;

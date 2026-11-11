@@ -238,3 +238,30 @@
   .ce-wrap { grid-template-columns: 1fr; }
   .ce-label { width: 100%; padding-top: 0; }
 }
+
+/* ---------- 수비 스킬 (가드 / 회피 / 반격) ---------- */
+.sk-kind { display: inline-block; font-size: .6em; font-weight: 900; padding: 1px 6px; margin-right: 8px; vertical-align: middle;
+  background: rgba(0, 0, 0, .35); color: #fff; letter-spacing: .05em; }
+.sk-d.k-clash .sk-name { background: linear-gradient(270deg, #ff8a5a, #e0433b 70%, #a8231d); }
+.sk-d.k-clash .sk-badge.def { background: radial-gradient(circle at 40% 35%, #ffe0d2, #ff8a5a 45%, #a8231d); }
+.sk-d.k-clash .sk-pips i { border-color: #ff8a5a; } .sk-d.k-clash .sk-pips i.h { background: #ff8a5a; box-shadow: 0 0 8px #ff8a5a; }
+.sk-d.k-evade .sk-name { background: linear-gradient(270deg, #7dffd2, #2fb8a0 70%, #1d7a6b); }
+.sk-d.k-evade .sk-badge.def { background: radial-gradient(circle at 40% 35%, #e0fff6, #7dffd2 45%, #1d7a6b); }
+.sk-d.k-evade .sk-pips i { border-color: #7dffd2; } .sk-d.k-evade .sk-pips i.h { background: #7dffd2; box-shadow: 0 0 8px #7dffd2; }
+.sk-d.k-counter .sk-name { background: linear-gradient(270deg, #ff9ad2, #c8306a 70%, #7a1a40); }
+.sk-d.k-counter .sk-badge.def { background: radial-gradient(circle at 40% 35%, #ffe0f0, #ff9ad2 45%, #7a1a40); }
+.sk-d.k-counter .sk-pips i { border-color: #ff9ad2; } .sk-d.k-counter .sk-pips i.h { background: #ff9ad2; box-shadow: 0 0 8px #ff9ad2; }
+/* 회피: 옆으로 빠지며 잔상 */
+.fighter.evade.right { right: 1%; }
+.fighter.evade .f-body { animation: evade calc(.4s * var(--spd)) ease-out forwards; }
+@keyframes evade {
+  0% { transform: scaleX(-1); opacity: 1; filter: none; }
+  40% { transform: scaleX(-1) translate(-30px, -18px) rotate(-10deg); opacity: .45; filter: blur(2px) drop-shadow(-14px 0 0 #7dffd255); }
+  100% { transform: scaleX(-1) translate(-18px, 0) rotate(-4deg); opacity: 1; filter: none; }
+}
+
+/* 수비 카드 숫자 색 */
+.c-stat.def.k-evade { color: #2fb8a0; }
+.c-stat.def.k-counter { color: #c8306a; }
+html[data-theme="light"] .c-stat.def.k-evade { color: #1d7a6b; }
+html[data-theme="light"] .c-stat.def.k-counter { color: #a8204f; }

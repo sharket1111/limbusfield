@@ -63,7 +63,7 @@ function normalizeCard(c) {
   const allowFx = { weapon: ['all', 'pierce', 'twice', 'lifesteal'], ego: ['all', 'pierce'], armor: ['reflect'], item: [] }[c.type];
   out.fx = (Array.isArray(c.fx) ? c.fx : []).filter((f) => allowFx.includes(f));
   if (c.type === 'weapon') { out.atk = num(c.atk, 0, 60, 8); out.plus = !!c.plus; }
-  if (c.type === 'armor') out.def = num(c.def, 0, 60, 8);
+  if (c.type === 'armor') { out.def = num(c.def, 0, 60, 8); out.kind = ['guard', 'evade', 'counter'].includes(c.kind) ? c.kind : 'guard'; }
   if (c.type === 'ego') { out.kind = 'attack'; out.power = num(c.power, 0, 60, 10); out.cost = num(c.cost, 0, 45, 10); }
   if (c.type === 'item') out.kind = 'custom';
   return out;
@@ -123,7 +123,7 @@ function templateCard(type, keep = {}) {
     count: keep.count ?? 2, rarity: keep.rarity ?? 1, id: keep.id, enabled: keep.enabled !== false };
   const coins3 = () => [0, 1, 2].map(() => ({ power: 2, fx: [] }));
   if (type === 'weapon') return normalizeCard({ ...base, type, attr: 'phys', atk: 8, coins: coins3(), fx: [], effects: [] });
-  if (type === 'armor') return normalizeCard({ ...base, type, attr: 'phys', def: 8, coins: [], fx: [], effects: [] });
+  if (type === 'armor') return normalizeCard({ ...base, type, kind: 'guard', attr: 'phys', def: 8, coins: [], fx: [], effects: [] });
   if (type === 'ego') return normalizeCard({ ...base, type, attr: 'fire', power: 10, cost: 10, coins: coins3(), fx: [], effects: [] });
   return normalizeCard({ ...base, type: 'item', effects: [{ when: 'use', target: 'self', key: 'heal', pot: 10, cnt: 0 }] });
 }
@@ -237,8 +237,8 @@ function renderWorkshop() {
   const t = c.type;
   const attrs = t === 'armor' ? Object.keys(ATTR) : Object.keys(ATTR).filter((k) => k !== 'all');
   const fxOpts = { weapon: [['all', '전체 공격'], ['pierce', '관통 (방어 무시)'], ['twice', '2회 공격'], ['lifesteal', '흡혈']],
-    ego: [['all', '전체 공격'], ['pierce', '관통 (방어 무시)']], armor: [['reflect', '반사 (합 승리 시 절반 반사)']], item: [] }[t];
-  const statLabel = { weapon: '공격력', armor: '방어력', ego: '위력' }[t];
+    ego: [['all', '전체 공격'], ['pierce', '관통 (방어 무시)']], armor: c.kind === 'guard' ? [['reflect', '반사 (막아낸 피해의 절반 반사)']] : [], item: [] }[t];
+  const statLabel = { weapon: '공격력', armor: '수비 위력', ego: '위력' }[t];
   const statKey = { weapon: 'atk', armor: 'def', ego: 'power' }[t];
 
   $('#ws-form').innerHTML = `
@@ -251,6 +251,9 @@ function renderWorkshop() {
         <select data-f="attr">${attrs.map((k) => `<option value="${k}" ${c.attr === k ? 'selected' : ''}>${ATTR[k].icon} ${ATTR[k].name}</option>`).join('')}</select>
       </label>` : ''}
       ${statKey ? `<label>${statLabel} <input type="number" data-f="${statKey}" data-num min="0" max="60" value="${c[statKey]}"></label>` : ''}
+      ${t === 'armor' ? `<label>수비 종류
+        <select data-f="kind">${[['guard', '🛡 가드 (여러 장 동시)'], ['evade', '💨 회피'], ['counter', '↩ 반격']].map(([k, l]) => `<option value="${k}" ${c.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      </label>` : ''}
       ${t === 'ego' ? `<label>소모 정신력 <input type="number" data-f="cost" data-num min="0" max="45" value="${c.cost}"></label>` : ''}
       <label>가격(원) <input type="number" data-f="price" data-num min="0" max="99" value="${c.price}"></label>
       <label>덱 장수 <input type="number" data-f="count" data-num min="1" max="5" value="${c.count}"></label>
@@ -269,13 +272,14 @@ function renderWorkshop() {
       ${fxOpts.map(([k, l]) => `<label><input type="checkbox" data-fx="${k}" ${c.fx.includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}
     </div>` : ''}
 
-    <h3>${t === 'item' ? '사용 효과' : '카드 효과'} <span class="muted small">${t === 'armor' ? '방어 시 / 방어 성공 시' : t === 'item' ? '사용하면 바로 발동' : '사용 시 / 적중 시'}</span></h3>
+    <h3>${t === 'item' ? '사용 효과' : '카드 효과'} <span class="muted small">${t === 'armor' ? '수비 시 / 수비 성공 시 (반격 성공 시 적중 효과처럼 발동)' : t === 'item' ? '사용하면 바로 발동' : '사용 시 / 적중 시'}</span></h3>
     <div class="eff-list">${c.effects.map((e, i) => effectRow(e, `effects.${i}`, 'card')).join('') || '<p class="muted small">효과 없음</p>'}</div>
     <button class="btn small" data-act="addEff" data-path="effects">+ 효과 추가</button>
 
     ${t !== 'item' ? `
-    <h3>코인 <span class="muted small">${t === 'armor'
-      ? `기본 방어 코인 ${RULES.coins}개(+${RULES.coinPower})에 더해 던지는 코인`
+    <h3>코인 <span class="muted small">${t === 'armor' && c.kind === 'guard'
+      ? `가드는 기본 코인 ${RULES.coins}개(+${RULES.coinPower})에 더해 이 코인을 던집니다`
+      : t === 'armor' ? `회피·반격은 이 코인을 던집니다 (없으면 기본 코인 ${RULES.coins}개)`
       : '이 카드는 아래 코인을 던집니다. 앞면이면 코인 위력이 더해집니다'}</span></h3>
     <div class="coin-list">${c.coins.map((coin, i) => `
       <div class="coin-box">
