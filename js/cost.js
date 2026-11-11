@@ -30,6 +30,13 @@ function effectValue(e) {
       case 'draw': v = (toEnemy ? -2 : 4) * pot; break;
       case 'cure': v = toEnemy ? -4 : 4; break;
       case 'chargeBoost': v = pot * 0.4; break;
+      case 'pwrOneSided': case 'pwrClash': v = pot * 0.3; break;
+      case 'pwrIfKw': case 'pwrHighSp': v = pot * 0.25; break;
+      case 'pwrLowHp': v = pot * 0.2; break;
+      case 'reuse': v = Math.max(1, cnt) * 1.2; break;
+      case 'kwBurst': v = toEnemy ? 4 : -4; break;
+      case 'breakArmor': v = toEnemy ? 6 : -6; break;
+      case 'stealWon': v = toEnemy ? pot * 0.4 : 0; break;
       default: v = 0;
     }
   }

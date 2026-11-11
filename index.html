@@ -4,6 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Anomaly Field</title>
+  <script>
+    // 저장한 테마(없으면 기기 설정)를 그리기 전에 적용
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem('af_theme'); } catch (e) { /* 무시 */ }
+      if (t !== 'light' && t !== 'dark') t = window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
@@ -11,6 +20,7 @@
 <body>
   <!-- 타이틀 -->
   <section id="title" class="screen show">
+    <button class="btn theme-toggle title-theme" title="다크 / 라이트 모드">🌙</button>
     <div class="title-wrap">
       <div class="logo">
         <div class="logo-sub">THE CITY · DISTRICT 00</div>
@@ -66,6 +76,7 @@
     <header class="topbar">
       <div class="brand">🌐 멀티 플레이</div>
       <div class="spacer"></div>
+      <button class="btn theme-toggle" title="다크 / 라이트 모드">🌙</button>
       <button class="btn small" id="mp-back">← 타이틀</button>
     </header>
 
@@ -149,6 +160,7 @@
       <div class="brand">🛠 카드 공방</div>
       <div class="muted small">카드팩은 이 브라우저에 저장됩니다. 내보내기로 백업·공유하세요</div>
       <div class="spacer"></div>
+      <button class="btn theme-toggle" title="다크 / 라이트 모드">🌙</button>
       <button class="btn small" id="ws-back">← 타이틀</button>
     </header>
     <div class="ws-packbar">
@@ -190,6 +202,7 @@
       <select id="in-speed-game" title="속도">
         <option value="1.6">느림</option><option value="1" selected>보통</option><option value="0.5">빠름</option>
       </select>
+      <button class="btn theme-toggle" title="다크 / 라이트 모드">🌙</button>
       <button class="btn small open-rules">규칙</button>
     </header>
 
@@ -271,7 +284,13 @@
             <li>⚡ <b>충전</b> (자신): 최대 20. 「충전 소모」 코인 효과에 쓰임. 턴 종료 시 -1</li>
             <li>💔 취약: 방어력 절반 · 💫 기절: 다음 턴 건너뜀 · 😱 공황: 다음 턴 건너뜀</li>
           </ul></li>
-        <li><b>코인</b> — 카드마다 코인 개수와 코인별 위력·효과가 다를 수 있습니다. 「앞면 적중 시」 효과는 그 코인이 앞면이고 공격이 적중했을 때만 발동합니다.</li>
+        <li><b>코인</b> — 카드마다 코인 개수와 코인별 위력·효과가 다를 수 있습니다. 「앞면 적중 시」 효과는 그 코인이 앞면이고 공격이 적중했을 때만 발동합니다.
+          <ul>
+            <li><b>던지기 전 효과</b>: 충전 소모 / 일방 공격이면(상대가 방어구를 안 냄) / 합 중이면 / 상대에게 특정 키워드가 있으면 / 내 HP가 절반 이하면 / 내 정신력이 기준 이상이면 → 이 코인 위력 증가</li>
+            <li><b>↻ 코인 재사용</b>: 앞면이 나오면 같은 코인을 다시 던지고, 앞면이 나올 때마다 위력이 한 번 더 더해집니다 (최대 횟수까지)</li>
+            <li><b>키워드 폭발</b>: 대상의 출혈·화상·파열·침잠 위력만큼 즉시 피해(진동은 흐트러짐 피해)를 주고 횟수 -1</li>
+            <li><b>🛡 방어구 파괴</b>: 대상 손패의 방어구 1장을 무작위로 버리게 함 · <b>₩ 돈 빼앗기</b>: 대상의 돈을 가져옴</li>
+          </ul></li>
         <li><b>코스트</b> — 모든 카드는 스펙(위력·코인·효과·특수 능력)에 따라 자동으로 <b>코스트 1~12</b>가 매겨집니다 (카드 왼쪽 위 숫자).
           카드팩의 코스트 합계(코스트 × 장수)는 <b>150 이하</b>여야 대전 규격입니다. 센 카드를 넣으면 넣을 수 있는 장수가 줄어듭니다. 개인 덱은 20장 이상 필요.</li>
         <li><b>🛠 카드 공방</b> — 카드팩을 여러 개 만들고, 종류·사진·코인별 위력과 효과를 정해 카드를 만들 수 있습니다.</li>

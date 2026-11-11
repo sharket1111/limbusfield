@@ -150,8 +150,25 @@ const EFFECT_DEFS = {
   won:         { label: '돈 획득',    pot: true },
   draw:        { label: '카드 뽑기',  pot: true },
   cure:        { label: '상태 이상 해제' },
-  chargeBoost: { label: '충전 소모 → 이 코인 위력 증가', pot: true, cnt: true, coinOnly: true, potLabel: '증가 위력', cntLabel: '소모 충전' },
+  kwBurst:     { label: '키워드 폭발 (그 위력만큼 피해)', kwSel: 'burst' },
+  breakArmor:  { label: '방어구 1장 파괴' },
+  stealWon:    { label: '돈 빼앗기', pot: true },
+  // ---- 코인 전용: 코인을 던지기 전에 적용 (preRoll) ----
+  chargeBoost: { label: '충전 소모 → 위력 증가', pot: true, cnt: true, coinOnly: true, preRoll: true, potLabel: '증가 위력', cntLabel: '소모 충전' },
+  pwrOneSided: { label: '일방 공격이면 위력 증가', pot: true, coinOnly: true, preRoll: true, potLabel: '증가 위력' },
+  pwrClash:    { label: '합 중이면 위력 증가', pot: true, coinOnly: true, preRoll: true, potLabel: '증가 위력' },
+  pwrIfKw:     { label: '대상에게 키워드가 있으면 위력 증가', pot: true, kwSel: 'any', coinOnly: true, preRoll: true, potLabel: '증가 위력' },
+  pwrLowHp:    { label: '내 HP 절반 이하면 위력 증가', pot: true, coinOnly: true, preRoll: true, potLabel: '증가 위력' },
+  pwrHighSp:   { label: '내 정신력이 기준 이상이면 위력 증가', pot: true, cnt: true, coinOnly: true, preRoll: true, potLabel: '증가 위력', cntLabel: '정신력 기준' },
+  reuse:       { label: '코인 재사용 (앞면이면 다시 던짐)', cnt: true, coinOnly: true, preRoll: true, cntLabel: '최대 횟수' },
 };
+
+// 키워드를 고르는 효과의 선택지
+const KW_SEL = {
+  any: ['burn', 'bleed', 'tremor', 'rupture', 'sinking', 'fragile', 'staggered'],
+  burst: ['bleed', 'burn', 'rupture', 'sinking', 'tremor'],
+};
+const kwName = (k) => (KEYWORDS[k] ? KEYWORDS[k].icon + KEYWORDS[k].name : k);
 
 const WHEN_TEXT = { use: '사용 시', hit: '적중 시', heads: '앞면 적중 시' };
 const WHEN_TEXT_ARMOR = { use: '방어 시', hit: '방어 성공 시', heads: '앞면일 때' };
@@ -161,7 +178,19 @@ function effectText(e, armor = false) {
   if (!d) return '';
   const who = e.target === 'self' ? '자신' : '대상';
   const when = (armor ? WHEN_TEXT_ARMOR : WHEN_TEXT)[e.when] || '';
-  if (e.key === 'chargeBoost') return `[사용 시] 충전 ${e.cnt || 0} 소모 → 이 코인 위력 +${e.pot || 0}`;
+  if (d.preRoll) {
+    const pot = e.pot || 0;
+    const body = {
+      chargeBoost: `충전 ${e.cnt || 0} 소모 → 이 코인 위력 +${pot}`,
+      pwrOneSided: `일방 공격이면 이 코인 위력 +${pot}`,
+      pwrClash: `합 중이면 이 코인 위력 +${pot}`,
+      pwrIfKw: `${armor ? '공격자' : '대상'}에게 ${kwName(e.kw)}이(가) 있으면 이 코인 위력 +${pot}`,
+      pwrLowHp: `내 HP가 절반 이하면 이 코인 위력 +${pot}`,
+      pwrHighSp: `내 정신력이 ${e.cnt || 0} 이상이면 이 코인 위력 +${pot}`,
+      reuse: `앞면이면 이 코인을 다시 던짐 (최대 ${e.cnt || 1}회)`,
+    }[e.key];
+    return `[던지기 전] ${body}`;
+  }
   let body;
   if (KEYWORDS[e.key] && !KEYWORDS[e.key].countOnly) body = `${who}에게 ${KEYWORDS[e.key].name} ${e.pot || 0}/${e.cnt || 0}`;
   else if (e.key === 'charge' || e.key === 'fragile') body = `${who}에게 ${KEYWORDS[e.key].name} ${e.cnt || 1}`;
@@ -174,12 +203,15 @@ function effectText(e, armor = false) {
   else if (e.key === 'won') body = `${who} +${e.pot || 0}원`;
   else if (e.key === 'draw') body = `${who} 카드 ${e.pot || 0}장`;
   else if (e.key === 'cure') body = `${who} 상태 이상 해제`;
+  else if (e.key === 'kwBurst') body = `${who}의 ${kwName(e.kw)} 폭발 (위력만큼 ${e.kw === 'tremor' ? '흐트러짐 ' : ''}피해, 횟수 -1)`;
+  else if (e.key === 'breakArmor') body = `${who}의 방어구 1장 파괴`;
+  else if (e.key === 'stealWon') body = `${who}의 돈 ${e.pot || 0}원 빼앗기`;
   return `[${when}] ${body}`;
 }
 
 function applyEffect(e, src, enemy) {
   const t = e.target === 'self' ? src : enemy;
-  if (!t || !t.alive || e.key === 'chargeBoost') return;
+  if (!t || !t.alive || (EFFECT_DEFS[e.key] && EFFECT_DEFS[e.key].preRoll)) return;
   if (KEYWORDS[e.key]) {
     if (e.key === 'stun') { addStatus(t, 'stun', 0, 1); floatText(t, '기절', 'dmg'); }
     else if (KEYWORDS[e.key].hidden) return;
@@ -195,6 +227,33 @@ function applyEffect(e, src, enemy) {
     case 'won': gainWon(t, e.pot || 0); break;
     case 'draw': drawCards(t, e.pot || 0); break;
     case 'cure': cureAll(t); floatText(t, '정화', 'heal'); break;
+    case 'kwBurst': {
+      const k = e.kw;
+      if (!KEYWORDS[k] || !has(t, k)) break;
+      const pot = t.status[k].pot;
+      if (k === 'tremor') { log(`${pname(t)} 〰 진동 폭발! 흐트러짐 피해 ${pot}`); staggerDamage(t, pot); }
+      else damage(t, pot, `${kwName(k)} 폭발`, src);
+      useCount(t, k);
+      break;
+    }
+    case 'breakArmor': {
+      const armors = t.hand.filter((c) => c && c.type === 'armor');
+      if (!armors.length) break;
+      const c = pick(armors);
+      discardCard(t, c);
+      log(`🛡 ${pname(t)}의 ${cname(c)}이(가) 부서졌습니다`);
+      toastTo(t, `「${c.name}」이(가) 부서졌습니다!`, 'bad');
+      break;
+    }
+    case 'stealWon': {
+      if (t === src) break;
+      const n = Math.min(t.won, e.pot || 0);
+      if (!n) break;
+      t.won -= n;
+      gainWon(src, n);
+      log(`${pname(src)} 이(가) ${pname(t)}의 돈 ${n}원을 빼앗았습니다`);
+      break;
+    }
     default: break;
   }
 }

@@ -20,15 +20,21 @@ const IMG_RE = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
 
 function normalizeEffect(e, coin = false) {
   if (!e || !EFFECT_DEFS[e.key]) return null;
-  if (EFFECT_DEFS[e.key].coinOnly && !coin) return null;
-  const when = e.key === 'chargeBoost' ? 'use' : ['use', 'hit', 'heads'].includes(e.when) ? e.when : 'hit';
-  return {
-    when: !coin && when === 'heads' ? 'hit' : when,
-    target: e.target === 'self' ? 'self' : 'enemy',
+  const d = EFFECT_DEFS[e.key];
+  if (d.coinOnly && !coin) return null;
+  let when = d.preRoll ? 'use' : ['use', 'hit', 'heads'].includes(e.when) ? e.when : 'hit';
+  if (!coin && when === 'heads') when = 'hit';
+  if (coin && !d.preRoll && when === 'use') when = 'hit';
+  const out = {
+    when,
+    target: d.preRoll ? 'self' : e.target === 'self' ? 'self' : 'enemy',
     key: e.key,
-    pot: num(e.pot, EFFECT_DEFS[e.key].signed ? -45 : 0, 99),
+    pot: num(e.pot, d.signed ? -45 : 0, 99),
     cnt: num(e.cnt, 0, 99),
   };
+  if (d.kwSel) out.kw = KW_SEL[d.kwSel].includes(e.kw) ? e.kw : KW_SEL[d.kwSel][0];
+  if (e.key === 'reuse') out.cnt = num(e.cnt, 1, 5, 1);
+  return out;
 }
 
 function normalizeCard(c) {
@@ -188,11 +194,18 @@ function effectRow(e, path, ctx) {
   else whens = ['use', 'hit'];
   const keys = Object.keys(EFFECT_DEFS).filter((k) => ctx === 'coin' || !EFFECT_DEFS[k].coinOnly);
   const d = EFFECT_DEFS[e.key];
-  const isBoost = e.key === 'chargeBoost';
+  const pre = !!d.preRoll;
+  // 효과 목록: 코인이면 「던지기 전」 효과를 위쪽 그룹으로
+  const opt = (k) => `<option value="${k}" ${e.key === k ? 'selected' : ''}>${EFFECT_DEFS[k].label}</option>`;
+  const keyOptions = ctx === 'coin'
+    ? `<optgroup label="던지기 전 (위력·재사용)">${keys.filter((k) => EFFECT_DEFS[k].preRoll).map(opt).join('')}</optgroup>
+       <optgroup label="적중 효과">${keys.filter((k) => !EFFECT_DEFS[k].preRoll).map(opt).join('')}</optgroup>`
+    : keys.map(opt).join('');
   return `<div class="eff-row">
-    ${isBoost ? '<span class="eff-fixed">사용 시</span>' : `<select data-f="${path}.when">${whens.map((w) => `<option value="${w}" ${e.when === w ? 'selected' : ''}>${W[w]}</option>`).join('')}</select>`}
-    ${isBoost ? '' : `<select data-f="${path}.target"><option value="enemy" ${e.target === 'enemy' ? 'selected' : ''}>${armor ? '공격자' : '상대'}</option><option value="self" ${e.target === 'self' ? 'selected' : ''}>자신</option></select>`}
-    <select data-f="${path}.key">${keys.map((k) => `<option value="${k}" ${e.key === k ? 'selected' : ''}>${EFFECT_DEFS[k].label}</option>`).join('')}</select>
+    ${pre ? '<span class="eff-fixed">던지기 전</span>' : `<select data-f="${path}.when">${whens.map((w) => `<option value="${w}" ${e.when === w ? 'selected' : ''}>${W[w]}</option>`).join('')}</select>`}
+    ${pre ? '' : `<select data-f="${path}.target"><option value="enemy" ${e.target === 'enemy' ? 'selected' : ''}>${armor ? '공격자' : '상대'}</option><option value="self" ${e.target === 'self' ? 'selected' : ''}>자신</option></select>`}
+    <select data-f="${path}.key">${keyOptions}</select>
+    ${d.kwSel ? `<select data-f="${path}.kw">${KW_SEL[d.kwSel].map((k) => `<option value="${k}" ${e.kw === k ? 'selected' : ''}>${kwName(k)}</option>`).join('')}</select>` : ''}
     ${d.pot ? `<label>${d.potLabel || '위력'} <input type="number" data-f="${path}.pot" data-num value="${e.pot}" min="${d.signed ? -45 : 0}" max="99"></label>` : ''}
     ${d.cnt ? `<label>${d.cntLabel || '횟수'} <input type="number" data-f="${path}.cnt" data-num value="${e.cnt}" min="0" max="99"></label>` : ''}
     <button class="btn small del" data-act="del" data-path="${path}" title="삭제">✕</button>
@@ -466,12 +479,18 @@ function initWorkshop() {
       if (/\.key$/.test(el.dataset.f)) {
         const e = getPath(ED.cur, el.dataset.f.replace(/\.key$/, ''));
         const d = EFFECT_DEFS[e.key];
-        if (e.key === 'chargeBoost') { e.when = 'use'; e.target = 'self'; e.pot = 4; e.cnt = 3; }
-        else if (e.when === 'use' && /^coins/.test(el.dataset.f)) e.when = 'hit';
+        if (d.preRoll) {
+          e.when = 'use';
+          e.target = 'self';
+          e.pot = { chargeBoost: 4, reuse: 0 }[e.key] ?? 3;
+          e.cnt = { chargeBoost: 3, pwrHighSp: 20, reuse: 1 }[e.key] ?? 0;
+        } else if (e.when === 'use' && /^coins/.test(el.dataset.f)) e.when = 'hit';
+        if (d.kwSel && !KW_SEL[d.kwSel].includes(e.kw)) e.kw = KW_SEL[d.kwSel][0];
         if (!d.pot) e.pot = 0;
         if (!d.cnt) e.cnt = 0;
         if (d.pot && !e.pot) e.pot = 2;
         if (d.cnt && !e.cnt) e.cnt = 2;
+        if (['kwBurst', 'breakArmor', 'stealWon'].includes(e.key)) e.target = 'enemy';
         if (['heal', 'sp', 'won', 'draw', 'cure', 'poise', 'charge'].includes(e.key)) e.target = 'self';
       }
       renderWorkshop();

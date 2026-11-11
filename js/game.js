@@ -375,15 +375,23 @@ function headChance(sp) {
 
 const defaultCoins = () => Array.from({ length: RULES.coins }, () => ({ power: RULES.coinPower, fx: [] }));
 
-// 코인 목록을 던져 [{ coin, head, power }] 반환
+// 코인 목록을 던져 [{ coin, head, power, reused }] 반환
+// 재사용 코인: 앞면이면 같은 코인을 다시 던지고, 앞면이 나올 때마다 위력이 한 번 더 더해짐
 function rollCoins(p, coins) {
   const chance = headChance(p.sp);
-  return coins.map((coin) => ({ coin, head: Math.random() < chance, power: coin.power }));
+  return coins.map((coin) => {
+    const head = Math.random() < chance;
+    let power = coin.power, reused = 0;
+    if (head && coin.reuse) {
+      while (reused < coin.reuse && Math.random() < chance) { power += coin.power; reused++; }
+    }
+    return { coin, head, power, reused };
+  });
 }
 const coinSum = (rolls) => rolls.reduce((s, r) => s + (r.head ? r.power : 0), 0);
 
 function coinsHTML(rolls) {
-  return rolls.map((r) => `<span class="coin ${r.head ? 'head' : 'tail'}" title="코인 위력 ${r.power}">${r.head ? r.power : '○'}</span>`).join('');
+  return rolls.map((r) => `<span class="coin ${r.head ? 'head' : 'tail'}${r.reused ? ' reuse' : ''}" title="코인 위력 ${r.coin.power}${r.reused ? ` · 재사용 ${r.reused}회` : ''}">${r.head ? r.power + (r.reused ? '↻' : '') : '○'}</span>`).join('');
 }
 
 // 위력 분포: 기본값 + 코인들(각자 위력)의 앞면 합
@@ -495,19 +503,30 @@ async function performAttack(attacker, cards, targets) {
   renderAll();
 }
 
-// 충전 소모 효과를 적용한 이번 공격의 코인
-function prepareCoins(p, coins) {
-  return coins.map((c) => {
-    let power = c.power;
+// 던지기 전 효과(조건부 위력, 충전 소모, 재사용)를 적용한 이번 합의 코인
+// ctx: { foe: 상대, clash: 합 중인지 }
+function prepareCoins(p, coins, ctx = {}) {
+  const boosts = [];
+  const out = coins.map((c) => {
+    let power = c.power, reuse = 0;
     for (const e of c.fx || []) {
+      const pot = e.pot || 0;
+      let why = '';
       if (e.key === 'chargeBoost' && p.status.charge.cnt >= (e.cnt || 0)) {
         useCount(p, 'charge', e.cnt || 0);
-        power += e.pot || 0;
-        log(`${pname(p)} ⚡ 충전 ${e.cnt} 소모 — 코인 위력 +${e.pot}`);
-      }
+        why = `⚡ 충전 ${e.cnt} 소모`;
+      } else if (e.key === 'pwrOneSided' && !ctx.clash) why = '일방 공격';
+      else if (e.key === 'pwrClash' && ctx.clash) why = '합';
+      else if (e.key === 'pwrIfKw' && ctx.foe && has(ctx.foe, e.kw)) why = `상대 ${kwName(e.kw)}`;
+      else if (e.key === 'pwrLowHp' && p.hp <= RULES.maxHp / 2) why = '빈사';
+      else if (e.key === 'pwrHighSp' && p.sp >= (e.cnt || 0)) why = `정신력 ${e.cnt} 이상`;
+      else if (e.key === 'reuse') reuse += e.cnt || 1;
+      if (why) { power += pot; boosts.push(`${why} +${pot}`); }
     }
-    return { ...c, power };
+    return { ...c, power, reuse };
   });
+  if (boosts.length) log(`${pname(p)} 🪙 코인 강화: ${boosts.join(', ')}`);
+  return out;
 }
 
 // 방어 선택: 조작 방식에 따라
@@ -547,7 +566,7 @@ async function resolveHit(attacker, target, info) {
     return;
   }
 
-  const ca = rollCoins(attacker, prepareCoins(attacker, info.coins));
+  const ca = rollCoins(attacker, prepareCoins(attacker, info.coins, { foe: target, clash: armors.length > 0 }));
   const pa = info.atk + coinSum(ca);
 
   if (!armors.length) {
@@ -560,7 +579,7 @@ async function resolveHit(attacker, target, info) {
   }
 
   // 합
-  const cd = rollCoins(target, defenseCoins(armors));
+  const cd = rollCoins(target, prepareCoins(target, defenseCoins(armors), { foe: attacker, clash: true }));
   const def = armorDef(target, armors);
   const pd = def + coinSum(cd);
   const result = pa > pd ? 'atk' : pd > pa ? 'def' : 'tie';

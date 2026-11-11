@@ -29,7 +29,9 @@ function cardHTML(c, opt = {}) {
     sub = { heal: `HP +${c.power}`, sp: `정신력 +${c.power}`, won: `+${c.power}원`, cure: '상태 해제', draw: `${c.power}장 뽑기`, gamble: '???', custom: '' }[c.kind] || '';
   }
   const kwTags = (c.effects || []).concat(...(c.coins || []).map((x) => x.fx || []))
-    .map((e) => (KEYWORDS[e.key] ? KEYWORDS[e.key].icon + KEYWORDS[e.key].name : e.key === 'tremorBurst' ? '〰폭발' : e.key === 'chargeBoost' ? '⚡소모' : e.key === 'stagger' ? '💢흐트러짐' : null))
+    .map((e) => (KEYWORDS[e.key] ? KEYWORDS[e.key].icon + KEYWORDS[e.key].name
+      : { tremorBurst: '〰폭발', chargeBoost: '⚡소모', stagger: '💢흐트러짐', reuse: '↻재사용', kwBurst: `${kwName(e.kw)}폭발`,
+        breakArmor: '🛡파괴', stealWon: '₩강탈', pwrOneSided: '⬆일방', pwrClash: '⬆합', pwrIfKw: '⬆조건', pwrLowHp: '⬆빈사', pwrHighSp: '⬆정신력' }[e.key] || null))
     .filter(Boolean);
   const tags = [...new Set([...fxOf(c).map((f) => FX_TEXT[f]), ...kwTags, c.plus ? '보조' : null].filter(Boolean))].slice(0, 3);
   const coinRow = Array.isArray(c.coins) && c.coins.length
@@ -544,7 +546,22 @@ function startSolo() {
     speed: +$('#in-speed').value, difficulty: $('#in-diff').value });
 }
 
+// ------------------------------------------------------------
+//  테마 (다크 / 라이트)
+// ------------------------------------------------------------
+function currentTheme() { return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark'; }
+function applyTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  try { localStorage.setItem('af_theme', t); } catch { /* 무시 */ }
+  $$('.theme-toggle').forEach((b) => {
+    b.textContent = t === 'light' ? '☀️' : '🌙';
+    b.title = t === 'light' ? '라이트 모드 (누르면 다크 모드)' : '다크 모드 (누르면 라이트 모드)';
+  });
+}
+
 function initUI() {
+  applyTheme(currentTheme());
+  $$('.theme-toggle').forEach((b) => (b.onclick = () => applyTheme(currentTheme() === 'light' ? 'dark' : 'light')));
   try { $('#in-name').value = localStorage.getItem('af_name') || ''; } catch { /* 무시 */ }
   const s = loadStats();
   $('#stats').textContent = s.win + s.lose ? `통산 ${s.win}승 ${s.lose}패` : '';
