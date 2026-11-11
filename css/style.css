@@ -512,7 +512,6 @@ body.night {
     var(--night-bg);
   transition: background 1s;
 }
-body.night #stage { background: radial-gradient(circle at center, var(--night-stage), var(--bg2) 70%); }
 
 /* ---------- 카드 공방 ---------- */
 #workshop { flex-direction: column; min-height: 100vh; max-width: 1200px; margin: 0 auto; padding: 0 12px 24px; }

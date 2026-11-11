@@ -1,0 +1,194 @@
+/* ============================================================
+   뒷골목 배경 + 가장자리 프레임 UI
+   ============================================================ */
+:root {
+  /* 패널이 배경을 살짝 비치게 */
+  --panel: rgba(25, 22, 30, .86);
+  --bg2: rgba(18, 16, 22, .84);
+  --edge: #d9a54a;
+  --edge2: #e0433b;
+  --edge-dim: #d9a54a55;
+  --cut: 12px;
+
+  /* 배경 (밤 골목) */
+  --sky-top: #050409; --sky-mid: #160d16; --sky-low: #45181a;
+  --smog: #6a2a24;
+  --far: #110e17; --far2: #0d0b13; --win: #ffcf7a; --win2: #ff8a5a; --win3: #ffd9a0;
+  --mid: #0b0910; --wall: #120e14; --brick: #ffffff0c; --pipe: #2a242e; --rail: #2f2833;
+  --ac: #1d1920; --acfan: #0c0a0e; --wire: #050407; --pole: #19151c;
+  --ground-far: #120e14; --ground-near: #060508; --lane: #ffffff14;
+  --lamp: #ffd28a; --bulb: #ffe0a8; --vig: #000; --beacon: #ff3b30; --junk: #0a080c;
+  --neon1: #ff4f7a; --neon2: #4fd8ff; --neon3: #ffd24f; --neon4: #7dff9a;
+  --bg-opacity: 1;
+  --stage-tint: rgba(8, 6, 10, .35);
+}
+html[data-theme="light"] {
+  --panel: rgba(255, 252, 246, .9);
+  --bg2: rgba(238, 231, 221, .88);
+  --edge: #a8741a;
+  --edge2: #c8352d;
+  --edge-dim: #a8741a55;
+
+  /* 배경 (안개 낀 해 질 녘) */
+  --sky-top: #b9b0c4; --sky-mid: #e2cfc6; --sky-low: #f3b996;
+  --smog: #f6e0d2;
+  --far: #9a8fa4; --far2: #8a7f96; --win: #fff1c9; --win2: #ffd0a8; --win3: #fff4d8;
+  --mid: #75697f; --wall: #5d5363; --brick: #ffffff14; --pipe: #4a414f; --rail: #463d4b;
+  --ac: #6c6372; --acfan: #4a4250; --wire: #3a3340; --pole: #4a424f;
+  --ground-far: #6e6474; --ground-near: #4c4452; --lane: #ffffff30;
+  --lamp: #fff0c8; --bulb: #fff6dc; --vig: #2a2230; --beacon: #e0433b; --junk: #3c3542;
+  --neon1: #e8306a; --neon2: #1fa8d8; --neon3: #d9a020; --neon4: #2fb85a;
+  --bg-opacity: .62;
+  --stage-tint: rgba(255, 250, 242, .45);
+}
+
+/* ---------- 배경 ---------- */
+body { background: var(--sky-top); }
+#bg { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; opacity: var(--bg-opacity); transition: opacity .6s; }
+#bg svg { width: 100%; height: 100%; display: block; }
+#bg .sky-top { stop-color: var(--sky-top); }
+#bg .sky-mid { stop-color: var(--sky-mid); }
+#bg .sky-low { stop-color: var(--sky-low); }
+#bg .smog-a { stop-color: var(--smog); }
+#bg .ground-far { stop-color: var(--ground-far); }
+#bg .ground-near { stop-color: var(--ground-near); }
+#bg .lamp { stop-color: var(--lamp); }
+#bg .vig { stop-color: var(--vig); }
+#bg .far { fill: var(--far); }
+#bg .far2 path:first-child { fill: var(--far2); }
+#bg .antenna { stroke: var(--far); fill: none; }
+#bg .beacon { fill: var(--beacon); animation: beacon 2.4s steps(2) infinite; }
+#bg .win { fill: var(--win); opacity: .55; }
+#bg .win2 { fill: var(--win2); opacity: .6; }
+#bg .win3 { fill: var(--win3); opacity: .7; }
+#bg .flk { animation: flicker 3.3s infinite; }
+#bg .mid { fill: var(--mid); }
+#bg .wall { fill: var(--wall); }
+#bg .wall-r { filter: brightness(.85); }
+#bg .brick { stroke: var(--brick); stroke-width: 1.5; }
+#bg .pipe { stroke: var(--pipe); stroke-width: 9; fill: none; stroke-linecap: round; }
+#bg .rail { stroke: var(--rail); stroke-width: 4; fill: none; }
+#bg .acunit { fill: var(--ac); }
+#bg .acfan { fill: var(--acfan); }
+#bg .wire { stroke: var(--wire); stroke-width: 3; fill: none; }
+#bg .bulb { fill: var(--bulb); }
+#bg .bulb-glow { animation: bulb 4s ease-in-out infinite alternate; }
+#bg .pole { stroke: var(--pole); stroke-width: 9; fill: none; }
+#bg .pole-head { fill: var(--pole); }
+#bg .lamp-pool { fill: var(--lamp); opacity: .14; }
+#bg .laneline { stroke: var(--lane); stroke-width: 4; }
+#bg .junk { fill: var(--junk); }
+#bg .junk2 { filter: brightness(1.3); }
+#bg .puddle { opacity: .28; }
+#bg .puddle.p1 { fill: var(--neon1); }
+#bg .puddle.p2 { fill: var(--neon2); }
+#bg .puddle.p3 { fill: var(--lamp); }
+#bg .neon-box { fill: none; stroke-width: 3; }
+#bg .neon-text { font-family: 'Noto Sans KR', sans-serif; font-weight: 900; font-size: 22px; }
+#bg .n1 .neon-box { stroke: var(--neon1); } #bg .n1 .neon-text { fill: var(--neon1); }
+#bg .n2 .neon-box { stroke: var(--neon2); } #bg .n2 .neon-text { fill: var(--neon2); }
+#bg .n3 .neon-box { stroke: var(--neon3); } #bg .n3 .neon-text { fill: var(--neon3); font-size: 24px; }
+#bg .n4 .neon-box { stroke: var(--neon4); } #bg .n4 .neon-text { fill: var(--neon4); font-size: 18px; }
+#bg .n1 { animation: neonflick 6s infinite; }
+#bg .n3 { animation: neonflick 9s 2s infinite; }
+@keyframes beacon { 50% { opacity: .15; } }
+@keyframes flicker { 0%, 100% { opacity: .55; } 45% { opacity: .55; } 48% { opacity: .05; } 52% { opacity: .6; } 70% { opacity: .1; } }
+@keyframes bulb { from { opacity: .6; } to { opacity: 1; } }
+@keyframes neonflick { 0%, 100% { opacity: 1; } 91% { opacity: 1; } 92% { opacity: .25; } 93% { opacity: 1; } 95% { opacity: .4; } 96% { opacity: 1; } }
+
+/* 뒷골목의 밤: 더 어둡고 푸르게 + 비 */
+body.night #bg svg { filter: brightness(.7) saturate(.85) hue-rotate(-12deg); }
+#bg .rain { position: absolute; inset: -20% 0 0 0; opacity: 0; transition: opacity 1s;
+  background-image: repeating-linear-gradient(105deg, transparent 0 22px, #a8c4ff22 22px 23px, transparent 23px 48px),
+                    repeating-linear-gradient(100deg, transparent 0 37px, #a8c4ff18 37px 38px, transparent 38px 71px);
+  background-size: 200px 200px, 260px 260px; animation: rain .5s linear infinite; }
+body.night #bg .rain { opacity: 1; }
+@keyframes rain { to { background-position: -40px 200px, -50px 260px; } }
+
+
+/* ---------- 패널: 모서리 사선 컷 + 금색 모서리 선 ---------- */
+.opp, .me-card, .bottom, #stage, #log, .panel, .def-box, .form, .mp-box, .mp-player, .ws-side, .ws-main, .ws-packbar, .ce-left, .ce-form, #info {
+  border-radius: 2px;
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  background-image:
+    linear-gradient(135deg, transparent 0 calc(var(--cut) * .66), var(--edge) calc(var(--cut) * .66) calc(var(--cut) * .66 + 1.5px), transparent calc(var(--cut) * .66 + 1.5px)),
+    linear-gradient(-45deg, transparent 0 calc(var(--cut) * .66), var(--edge) calc(var(--cut) * .66) calc(var(--cut) * .66 + 1.5px), transparent calc(var(--cut) * .66 + 1.5px));
+  background-size: calc(var(--cut) + 6px) calc(var(--cut) + 6px);
+  background-position: top left, bottom right;
+  background-repeat: no-repeat;
+  background-color: var(--panel);
+}
+#log, #info, .me-card, .ws-packbar { background-color: var(--bg2); }
+#stage { background-color: var(--stage-tint); }
+.opp.targeted::after { top: 6px; right: 10px; font-size: 16px; }
+.def-box { --cut: 16px; }
+
+/* 무대·하단 패널 위쪽의 사선 줄무늬 띠 */
+#stage, .bottom, .panel, .def-box { position: relative; }
+#stage::before, .bottom::before, .panel::before, .def-box::before {
+  content: ''; position: absolute; top: 0; right: 18px; width: 72px; height: 5px; pointer-events: none; z-index: 1;
+  background: repeating-linear-gradient(-55deg, var(--edge) 0 5px, transparent 5px 10px); opacity: .8;
+}
+.def-box::before { background: repeating-linear-gradient(-55deg, var(--edge2) 0 5px, transparent 5px 10px); }
+/* 활성 패널: 왼쪽 세로 강조선 */
+.opp.active, .me-card.active { box-shadow: inset 3px 0 0 var(--edge), 0 0 18px #d9a54a33; }
+.opp.targeted { box-shadow: inset 3px 0 0 var(--edge2), 0 0 0 2px var(--edge2); }
+
+/* 버튼: 주요 버튼은 사선 컷 */
+.btn { border-radius: 2px; }
+.btn.primary, .btn.big { clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); }
+.btn.primary { letter-spacing: .04em; }
+.card { border-radius: 4px; }
+
+/* 상단 바 */
+.topbar { border-bottom: 1px solid var(--edge-dim); position: relative; }
+.topbar::after { content: ''; position: absolute; left: 0; bottom: -1px; width: 120px; height: 2px; background: var(--edge2); }
+.brand::before { content: '▌'; color: var(--edge2); margin-right: 6px; }
+
+/* 타이틀 로고 프레임 */
+.logo { position: relative; padding: 18px 10px; }
+.logo::before, .logo::after { content: ''; position: absolute; width: 34px; height: 34px; border: 2px solid var(--edge); }
+.logo::before { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+.logo::after { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+
+/* ---------- 화면 가장자리 프레임 ---------- */
+#frame { position: fixed; inset: 0; pointer-events: none; z-index: 45; }
+#frame .fc { position: absolute; width: 26px; height: 26px; border: 2px solid var(--edge); opacity: .9; }
+#frame .fc.tl { top: 6px; left: 6px; border-right: 0; border-bottom: 0; }
+#frame .fc.tr { top: 6px; right: 6px; border-left: 0; border-bottom: 0; }
+#frame .fc.bl { bottom: 6px; left: 6px; border-right: 0; border-top: 0; }
+#frame .fc.br { bottom: 6px; right: 6px; border-left: 0; border-top: 0; }
+#frame .fc.tl::after { content: ''; position: absolute; top: 4px; left: 4px; width: 6px; height: 6px; background: var(--edge2); }
+#frame .fh { position: absolute; left: 50%; width: 140px; height: 4px; transform: translateX(-50%);
+  background: repeating-linear-gradient(-55deg, var(--edge) 0 4px, transparent 4px 9px); opacity: .7; }
+#frame .fh.top { top: 0; }
+#frame .fh.bottom { bottom: 0; }
+#frame .fs { position: absolute; top: 50%; width: 6px; height: 120px; transform: translateY(-50%);
+  background: repeating-linear-gradient(180deg, var(--edge) 0 2px, transparent 2px 8px); opacity: .55; }
+#frame .fs.left { left: 4px; }
+#frame .fs.right { right: 4px; }
+#frame .ft { position: absolute; font: 700 9px/1 'Noto Sans KR', monospace; letter-spacing: .25em; color: var(--edge); opacity: .75; white-space: nowrap; }
+#frame .ft.lv { left: 3px; top: 50%; transform: translate(-50%, -50%) rotate(-90deg); transform-origin: center; margin-left: 6px; top: 26%; }
+#frame .ft.rv { right: 3px; top: 74%; transform: translate(50%, -50%) rotate(90deg); margin-right: 6px; }
+#frame .ft.bl { left: 40px; bottom: 6px; }
+#frame .ft.br { right: 40px; bottom: 6px; }
+#frame .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--green); margin-right: 5px; vertical-align: middle; animation: beacon 2s steps(2) infinite; }
+body.night #frame .ft.rv { color: var(--night-accent); }
+
+/* 화면 내용이 테두리에 붙지 않게 */
+#game, #workshop, #multi, #charedit { padding-left: 18px; padding-right: 18px; }
+
+@media (max-width: 760px) {
+  #frame .ft.lv, #frame .ft.rv, #frame .fs, #frame .ft.br { display: none; }
+  #frame .fh { width: 80px; }
+  #game, #workshop, #multi, #charedit { padding-left: 10px; padding-right: 10px; }
+  :root { --cut: 9px; }
+  .topbar { flex-wrap: wrap; row-gap: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #bg *, #bg .rain { animation: none !important; }
+}
+
+/* 배경 위 글씨가 잘 읽히게 */
+.tagline, .logo-kr, .logo-sub, #stats, #custom-info, .stage-idle, .f-name, .f-cards span, .arena-title { text-shadow: var(--float-shadow); }
+.tagline { color: var(--text); opacity: .85; }

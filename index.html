@@ -17,8 +17,22 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/arena.css">
+  <link rel="stylesheet" href="css/frame.css">
 </head>
 <body>
+  <!-- 뒷골목 배경 (js/scenery.js가 그림) -->
+  <div id="bg" aria-hidden="true"></div>
+  <!-- 화면 가장자리 프레임 -->
+  <div id="frame" aria-hidden="true">
+    <i class="fc tl"></i><i class="fc tr"></i><i class="fc bl"></i><i class="fc br"></i>
+    <i class="fh top"></i><i class="fh bottom"></i>
+    <i class="fs left"></i><i class="fs right"></i>
+    <span class="ft lv">ANOMALY FIELD // DISTRICT 00</span>
+    <span class="ft rv" id="frame-clock">BACKSTREET</span>
+    <span class="ft bl"><i class="dot"></i>SYS ONLINE</span>
+    <span class="ft br">CLASH PROTOCOL v1</span>
+  </div>
+
   <!-- 타이틀 -->
   <section id="title" class="screen show">
     <button class="btn theme-toggle title-theme" title="다크 / 라이트 모드">🌙</button>
@@ -344,6 +358,7 @@
   <script src="js/ai.js"></script>
   <script src="js/editor.js"></script>
   <script src="js/character.js"></script>
+  <script src="js/scenery.js"></script>
   <script src="js/net.js"></script>
 </body>
 </html>

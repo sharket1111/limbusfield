@@ -262,6 +262,7 @@ function clearStageLocal(text) {
 }
 function setNight(on) {
   document.body.classList.toggle('night', on);
+  if (typeof updateFrameClock === 'function') updateFrameClock();
   netFx('night', { on });
 }
 

@@ -427,7 +427,7 @@ const Net = {
     else if (k === 'clear') clearStageLocal(sanitizeHTML(d.text || ''));
     else if (k === 'float') floatLocal(+d.pid, String(d.text || ''), String(d.cls || '').replace(/[^a-z]/g, ''));
     else if (k === 'toast') toast(String(d.text || ''), d.kind === 'bad' ? 'bad' : '');
-    else if (k === 'night') document.body.classList.toggle('night', !!d.on);
+    else if (k === 'night') { document.body.classList.toggle('night', !!d.on); updateFrameClock(); }
   },
 
   async onAsk(m) {
