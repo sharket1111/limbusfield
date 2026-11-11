@@ -74,7 +74,7 @@ function normalizeCard(c) {
     out.dtype = DTYPES[c.dtype] ? c.dtype : 'slash';
   }
   if (c.type === 'armor') { out.def = num(c.def, 0, 60, 8); out.kind = ['guard', 'evade', 'counter'].includes(c.kind) ? c.kind : 'guard'; }
-  if (c.type === 'ego') { out.kind = 'attack'; out.power = num(c.power, 0, 60, 10); out.cost = egoSpCost(out); }
+  if (c.type === 'ego') { out.kind = 'attack'; out.power = num(c.power, 0, 60, 10); out.cost = egoSpCost(out); out.egoFx = normalizeEgoFx(c.egoFx); }
   if (c.type === 'item') out.kind = 'custom';
   return out;
 }
@@ -235,6 +235,25 @@ function kwSelect(sel, cur, attrs) {
   return `<select ${attrs}>${list.map((k) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${kwPlain(k)}</option>`).join('')}</select>`;
 }
 
+// E.G.O 연출 설정 칸: 무기 · 복장 · 대사 · 배경 + 미리보기
+function egoFxForm(c) {
+  const f = normalizeEgoFx(c.egoFx);
+  c.egoFx = f;
+  return `<h3>E.G.O 연출 <span class="muted small">E.G.O를 쓸 때 나오는 연출과 합 장면의 모습</span></h3>
+    <div class="ws-grid egofx">
+      <label>무기 <select data-f="egoFx.gear">${EGO_GEARS.map(([k, l]) => `<option value="${k}" ${f.gear === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label>무기 색 <input type="color" data-f="egoFx.gearColor" value="${f.gearColor}"></label>
+      <label>복장 <select data-f="egoFx.outfit"><option value="">평소 옷 그대로</option>${LOOK_OPTIONS.outfit.map(([k, l]) => `<option value="${k}" ${f.outfit === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label>복장 색 <span class="egofx-color"><input type="color" data-f="egoFx.outfitColor" value="${f.outfitColor || '#2c3440'}" ${f.outfitColor ? '' : 'data-unset="1"'}>
+        ${f.outfitColor ? '<button class="btn small" data-act="egoOutfitColorOff">그대로</button>' : '<span class="muted small">평소 색</span>'}</span></label>
+      <label>배경 <select data-f="egoFx.bg">${EGO_BGS.map(([k, l]) => `<option value="${k}" ${f.bg === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      ${f.bg === 'color' ? `<label>배경 색 <input type="color" data-f="egoFx.bgColor" value="${f.bgColor}"></label>` : ''}
+      ${f.bg === 'img' ? `<label>배경 사진 <span><label class="btn small">📷 고르기<input type="file" accept="image/*" id="ws-egobg-in" hidden></label> ${f.bgImg ? '<span class="pos small">✔</span>' : '<span class="muted small">없음</span>'}</span></label>` : ''}
+    </div>
+    <label class="ws-flavor">대사 <input data-f="egoFx.quote" maxlength="60" value="${f.quote}" placeholder="비우면 카드 설명이 대사로 나옵니다"></label>
+    <button class="btn small" data-act="egoPreview">▶ 연출 미리보기</button>`;
+}
+
 function packInfoHTML(pack) {
   previewKeywords(pack.keywords);
   const s = packSummary(packCards(pack), pack.keywords);
@@ -307,6 +326,7 @@ function renderWorkshop() {
       ${fxOpts.map(([k, l]) => `<label><input type="checkbox" data-fx="${k}" ${c.fx.includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}
     </div>` : ''}
 
+    ${t === 'ego' ? egoFxForm(c) : ''}
     <h3>${t === 'item' ? '사용 효과' : '카드 효과'} <span class="muted small">${t === 'armor' ? '수비 시 / 수비 성공 시 (반격 성공 시 적중 효과처럼 발동)' : t === 'item' ? '사용하면 바로 발동' : '사용 시 / 적중 시'}</span></h3>
     <div class="eff-list">${c.effects.map((e, i) => effectRow(e, `effects.${i}`, 'card')).join('') || '<p class="muted small">효과 없음</p>'}</div>
     <button class="btn small" data-act="addEff" data-path="effects">+ 효과 추가</button>
@@ -492,6 +512,10 @@ function initWorkshop() {
   // 선택 / 체크: 구조가 바뀔 수 있으니 다시 그림
   form.addEventListener('change', async (ev) => {
     const el = ev.target;
+    if (el.id === 'ws-egobg-in') {
+      try { ED.cur.egoFx.bgImg = await readImage(el.files[0]); renderWorkshop(); } catch (e) { toast(e.message, 'bad'); }
+      return;
+    }
     if (el.id === 'ws-img-in') {
       try {
         ED.cur.img = await readImage(el.files[0]);
@@ -558,6 +582,11 @@ function initWorkshop() {
       getPath(c, parts.join('.')).splice(idx, 1);
     } else if (act === 'noimg') {
       c.img = '';
+    } else if (act === 'egoOutfitColorOff') {
+      c.egoFx.outfitColor = '';
+    } else if (act === 'egoPreview') {
+      previewEgoCine(normalizeCard(c) || c);
+      return;
     }
     renderWorkshop();
   });

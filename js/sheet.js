@@ -32,6 +32,32 @@ function dtypeOf(c) {
 }
 const resOf = (p, dtype) => (p && p.res && DTYPES[dtype] ? p.res[dtype] || 1 : 1);
 
+// ---------------- E.G.O 연출 설정 (직접 만든 E.G.O) ----------------
+const EGO_GEARS = [['', '자동'], ['blade', '검'], ['spear', '창'], ['hammer', '망치'], ['scythe', '낫'], ['gun', '총'], ['book', '책'], ['orb', '구슬'], ['shield', '방패']];
+const EGO_BGS = [['sin', '죄악 색'], ['flame', '불길'], ['void', '심연'], ['storm', '폭풍'], ['blood', '핏빛'], ['gold', '금빛'], ['color', '직접 고른 색'], ['img', '사진']];
+const EGO_IMG_RE = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
+function normalizeEgoFx(x) {
+  const o = x && typeof x === 'object' ? x : {};
+  const hex = (v, d) => (/^#[0-9a-f]{6}$/i.test(v || '') ? v.toLowerCase() : d);
+  return {
+    gear: EGO_GEARS.some(([k]) => k === o.gear) ? o.gear : '',
+    gearColor: hex(o.gearColor, '#e0b866'),
+    outfit: o.outfit && LOOK_OPTIONS.outfit.some(([k]) => k === o.outfit) ? o.outfit : '',
+    outfitColor: hex(o.outfitColor, ''),
+    quote: cleanText(o.quote, 60),
+    bg: EGO_BGS.some(([k]) => k === o.bg) ? o.bg : 'sin',
+    bgColor: hex(o.bgColor, '#7a1a2a'),
+    bgImg: typeof o.bgImg === 'string' && EGO_IMG_RE.test(o.bgImg) && o.bgImg.length < 300000 ? o.bgImg : '',
+  };
+}
+// E.G.O 사용 중 캐릭터 모습 (복장을 바꾸면 그 옷으로)
+function egoLook(look, fx) {
+  const L = { ...(normalizeLook(look) || randomLook('x')) };
+  if (fx && fx.outfit) L.outfit = fx.outfit;
+  if (fx && fx.outfitColor) L.outfitColor = fx.outfitColor;
+  return L;
+}
+
 // ---------------- 캐릭터 스탯 ----------------
 // [최소, 최대, 한 칸, 기본] — 한 칸에 1포인트
 const SHEET_RANGE = { hp: [60, 150, 5, 100], sp: [-20, 25, 5, 0], stg: [20, 70, 5, 40] };

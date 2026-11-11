@@ -268,6 +268,21 @@ function charSVG(lookIn, opts = {}) {
     gear = `<g transform="translate(84 110) rotate(-38)"><rect x="-2.5" y="-50" width="5" height="46" rx="1" fill="${gc}" stroke="${line}" stroke-width=".8"/>
       <path d="M-2.5,-50 L0,-56 L2.5,-50 Z" fill="${gc}" stroke="${line}" stroke-width=".8"/>
       <rect x="-8" y="-5" width="16" height="4" rx="1" fill="#6b5a3a"/><rect x="-2" y="-1" width="4" height="9" fill="#3a2a1f"/></g>`;
+  } else if (opts.gear === 'spear') {
+    gear = `<g transform="translate(84 112) rotate(12)"><rect x="-1.6" y="-80" width="3.2" height="98" rx="1" fill="#5a4630"/>
+      <path d="M-5.5,-78 L0,-100 L5.5,-78 L0,-82 Z" fill="${gc}" stroke="${line}" stroke-width=".8"/><rect x="-4" y="-78" width="8" height="3" fill="${shade(gc, -0.4)}"/></g>`;
+  } else if (opts.gear === 'hammer') {
+    gear = `<g transform="translate(84 110) rotate(24)"><rect x="-2" y="-48" width="4" height="56" rx="1" fill="#5a4630"/>
+      <rect x="-13" y="-62" width="26" height="16" rx="2.5" fill="${gc}" stroke="${line}" stroke-width=".9"/><rect x="-13" y="-56" width="26" height="3" fill="${shade(gc, -0.35)}"/></g>`;
+  } else if (opts.gear === 'scythe') {
+    gear = `<g transform="translate(84 114) rotate(-12)"><rect x="-1.6" y="-74" width="3.2" height="90" rx="1" fill="#3a2a1f"/>
+      <path d="M1,-72 Q32,-80 46,-52 Q28,-66 1,-62 Z" fill="${gc}" stroke="${line}" stroke-width=".8"/></g>`;
+  } else if (opts.gear === 'gun') {
+    gear = `<g transform="translate(84 106)"><rect x="0" y="-5" width="26" height="7" rx="1.5" fill="${gc}" stroke="${line}" stroke-width=".8"/>
+      <rect x="20" y="-7" width="3" height="3" fill="${shade(gc, -0.4)}"/><path d="M2,2 L9,2 L7,13 L1,13 Z" fill="#2a2420"/></g>`;
+  } else if (opts.gear === 'book') {
+    gear = `<g transform="translate(90 104) rotate(-8)"><rect x="-9" y="-11" width="18" height="22" rx="1.5" fill="${gc}" stroke="${line}" stroke-width=".9"/>
+      <path d="M0,-11 L0,11" stroke="${shade(gc, -0.45)}" stroke-width="1.2"/><circle cx="4.5" cy="0" r="2.2" fill="#fff6d0" opacity=".85"/></g>`;
   } else if (opts.gear === 'orb') {
     gear = `<circle cx="88" cy="106" r="10" fill="${gc}" opacity=".35" class="orb-glow"/><circle cx="88" cy="106" r="6" fill="${gc}" stroke="#fff" stroke-width="1"/>`;
   } else if (opts.gear === 'shield') {
@@ -479,7 +494,9 @@ function renderEgoCine(d) {
   const sin = SINS[sinOf(c)];
   const box = $('#egocine');
   const seed = Math.floor(Math.random() * 1e6);
-  const quote = cleanText(c.flavor || '', 60) || `「${c.name}」`;
+  const fx = c.egoFx ? normalizeEgoFx(c.egoFx) : normalizeEgoFx({});
+  const quote = fx.quote || cleanText(c.flavor || '', 60) || `「${c.name}」`;
+  const gearC = fx.gear ? fx.gearColor : sin.color;
   box.style.setProperty('--egoc', sin.color);
   box.style.setProperty('--egoc2', shade(sin.color, -0.6));
   box.style.setProperty('--spd', d.spd);
@@ -487,13 +504,16 @@ function renderEgoCine(d) {
     <div class="ec-crack">${burstSVG(seed)}</div>
     <div class="ec-flash"></div>
     <div class="ec-band">
-      <div class="ec-bg"></div>
-      <div class="ec-char">${charSVG(p.look, { gear: 'orb', gearColor: sin.color })}</div>
+      <div class="ec-bg bg-${fx.bg}"></div>
+      <div class="ec-char">${charSVG(egoLook(p.look, fx), { gear: fx.gear || 'orb', gearColor: gearC })}</div>
       <svg class="ec-torn" viewBox="0 0 100 100" preserveAspectRatio="none">${tornEdge(seed, true)}${tornEdge(seed + 7, false)}</svg>
       <div class="ec-who">${p.name}</div>
       <div class="ec-quote">${quote}</div>
       <div class="ec-name"><small>E.G.O</small>${c.name}</div>
     </div>`;
+  const bg = $('.ec-bg', box);
+  if (fx.bg === 'color') { bg.style.setProperty('--egoc', fx.bgColor); bg.style.setProperty('--egoc2', shade(fx.bgColor, -0.6)); }
+  if (fx.bg === 'img' && fx.bgImg) bg.style.backgroundImage = `linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.35)), url("${fx.bgImg}")`;
   box.classList.remove('play');
   void box.offsetWidth;
   box.classList.add('show', 'play');
@@ -501,6 +521,17 @@ function renderEgoCine(d) {
   box.dataset.token = token;
   box.onclick = () => box.classList.remove('show', 'play');
   setTimeout(() => { if (box.dataset.token === token) box.classList.remove('show', 'play'); }, EGO_CINE_MS * d.spd);
+}
+// 공방 미리보기: 내 캐릭터로 바로 재생 (게임 밖에서도)
+function previewEgoCine(card) {
+  const look = getLook();
+  const prevPlayers = G.players;
+  const id = '__preview_ego';
+  G.defs[id] = { ...card, id };
+  G.players = [{ id: -99, name: cleanText(($('#in-name').value || '').trim(), 10) || '관리자', look }];
+  renderEgoCine({ pid: -99, card: { uid: 0, id }, spd: 1 });
+  G.players = prevPlayers;
+  delete G.defs[id];
 }
 // 방장: 연출을 띄우고 참가자에게도 보냄. 끝날 때까지 기다림
 async function playEgoCine(p, card) {
@@ -564,7 +595,10 @@ function renderClash(d) {
         <div class="floor"></div>
         <div class="fighter left enter">
           ${skA}
-          <div class="f-fig"><div class="ff-base t-${team(A)}"></div>${ringSVG(A, false)}<div class="f-body">${charSVG(A.look, { gear: d.gear, gearColor: attrColor })}</div><div class="f-hit"></div></div>
+          <div class="f-fig"><div class="ff-base t-${team(A)}"></div>${ringSVG(A, false)}<div class="f-body">${(() => {
+            const ef = d.ego && aCards[0] && aCards[0].egoFx ? normalizeEgoFx(aCards[0].egoFx) : null;
+            return ef ? charSVG(egoLook(A.look, ef), { gear: ef.gear || 'orb', gearColor: ef.gear ? ef.gearColor : attrColor }) : charSVG(A.look, { gear: d.gear, gearColor: attrColor });
+          })()}</div><div class="f-hit"></div></div>
           ${footHTML(A)}
         </div>
         <div class="fighter right enter">

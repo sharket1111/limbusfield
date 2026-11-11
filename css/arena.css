@@ -462,3 +462,17 @@ html[data-theme="light"] .c-stat.def.k-counter { color: #a8204f; }
 .ec-char { width: min(40vh, 34vw); top: 48%; }
 @keyframes ecchar { 0% { transform: translate(-30%, -50%) scale(1.5); opacity: 0; } 15% { opacity: 1; } 100% { transform: translate(-52%, -50%) scale(1.3); } }
 .ec-quote { z-index: 2; }
+/* E.G.O 연출 배경 */
+.ec-bg { background-size: cover !important; background-position: center !important; }
+.ec-bg.bg-flame { background: radial-gradient(ellipse at 50% 120%, #fff1a8, #ff8a1a 25%, #d2240f 55%, #3a0804 100%); }
+.ec-bg.bg-flame::after { background: repeating-linear-gradient(80deg, transparent 0 26px, rgba(255, 210, 120, .14) 26px 30px); }
+.ec-bg.bg-void { background: radial-gradient(circle at 50% 50%, #6a3fa0, #241040 40%, #05020c 85%); }
+.ec-bg.bg-void::after { background: repeating-radial-gradient(circle at 50% 50%, transparent 0 22px, rgba(180, 120, 255, .12) 22px 24px); }
+.ec-bg.bg-storm { background: linear-gradient(160deg, #0d2a4a, #2a6fd1 45%, #0a1830); }
+.ec-bg.bg-storm::after { background: repeating-linear-gradient(115deg, transparent 0 18px, rgba(200, 230, 255, .16) 18px 20px); }
+.ec-bg.bg-blood { background: radial-gradient(ellipse at 40% 40%, #b8101e, #5a0610 55%, #140204); }
+.ec-bg.bg-blood::after { background: radial-gradient(circle at 20% 30%, rgba(0, 0, 0, .35) 0 6%, transparent 7%), radial-gradient(circle at 75% 65%, rgba(0, 0, 0, .3) 0 9%, transparent 10%), radial-gradient(circle at 60% 20%, rgba(0, 0, 0, .3) 0 4%, transparent 5%); }
+.ec-bg.bg-gold { background: repeating-conic-gradient(from 0deg at 50% 50%, #ffe7a8 0 6deg, #c98a12 6deg 12deg); }
+.ec-bg.bg-gold::after { background: radial-gradient(circle, rgba(255, 255, 255, .5), transparent 60%); }
+.ec-bg.bg-img::after { background: none; }
+.egofx .egofx-color { display: flex; gap: 6px; align-items: center; }
