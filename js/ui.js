@@ -516,12 +516,12 @@ function actionState() {
   if (main.type === 'ego' && !canPayEgo(p, main)) return { label: `정신력 부족 (${main.cost} 소모)`, ok: false };
   if (main.type === 'trade' && main.kind === 'sell' && !G.sel.goods) return { label: '팔 카드를 선택하세요', ok: false };
   if (needsTarget(main) && !target) return { label: '대상을 선택하세요', ok: false };
-  if (main.type === 'trade') return { label: { buy: '🛒 매입 (턴 종료)', sell: '💸 강매 (턴 종료)', exchange: '💱 환전 (턴 유지)' }[main.kind], ok: true };
+  if (main.type === 'trade') return { label: { buy: '🛒 매입 (턴 종료)', sell: '💸 강매 (턴 종료)', exchange: '💱 환전 (턴 종료)' }[main.kind], ok: true };
   if (main.type === 'weapon') return { label: '⚔ 공격', ok: true };
   if (main.type === 'ego' && main.kind === 'attack') return { label: '✧ E.G.O 공격', ok: true };
   if (main.type === 'ego' && (main.kind === 'steal' || main.kind === 'stun')) return { label: '✧ E.G.O 발현 (턴 종료)', ok: true };
   if (main.type === 'item') return { label: '사용 (턴 종료)', ok: true };
-  return { label: '사용 (턴 유지)', ok: true };
+  return { label: '사용 (턴 종료)', ok: true };
 }
 
 // 선택 → 행동 데이터

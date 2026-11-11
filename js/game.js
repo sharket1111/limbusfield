@@ -943,8 +943,7 @@ function pray(p) {
     discardCard(p, tossed);
   }
   const n = drawCards(p, 1);
-  changeSp(p, 10);
-  log(`${pname(p)} 🙏 기도했습니다 (${tossed ? `${cname(tossed)} 버림, ` : ''}카드 ${n}장, 정신력 +10)`);
+  log(`${pname(p)} 🙏 기도했습니다 (${tossed ? `${cname(tossed)} 버림, ` : ''}카드 ${n}장)`);
 }
 
 // ------------------------------------------------------------
@@ -1038,8 +1037,6 @@ async function tradeExchange(p, card, plan) {
 }
 
 const itemHitsEnemy = (c) => c.type === 'item' && (c.effects || []).some((e) => e.target === 'enemy');
-const isFreeAction = (c) => (c.type === 'ego' && ['heal', 'cure'].includes(c.kind)) ||
-  (c.type === 'trade' && c.kind === 'exchange');
 const needsTarget = (c) => itemHitsEnemy(c) ||
   (c.type === 'trade' && (c.kind === 'buy' || c.kind === 'sell')) ||
   (c.type === 'weapon' && !hasFx(c, 'all')) ||
@@ -1081,7 +1078,7 @@ async function executeAction(p, a) {
   if (card.type === 'trade') {
     if (card.kind === 'exchange') {
       const ok = await tradeExchange(p, card, a.plan);
-      return R(false, ok, ok ? '' : '환전 값이 올바르지 않습니다');
+      return R(ok, ok, ok ? '' : '환전 값이 올바르지 않습니다');
     }
     if (card.kind === 'buy') {
       await tradeBuy(p, card, target, buyDeciderFor(p, target));
@@ -1092,11 +1089,8 @@ async function executeAction(p, a) {
     await tradeSell(p, card, goods, target);
     return R(true);
   }
-  if (isFreeAction(card)) {
-    await useSupport(p, card, p);
-    return R(false);
-  }
-  await useSupport(p, card, target);
+  // 어떤 카드를 쓰든 턴이 끝남 (대상이 필요 없는 카드는 자신에게)
+  await useSupport(p, card, needsTarget(card) ? target : p);
   return R(true);
 }
 

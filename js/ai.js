@@ -56,8 +56,7 @@ async function cpuTurn(p) {
     }
     if (use) {
       await useSupport(p, use, p);
-      if (use.type === 'item' || checkEnd()) return;   // 도구는 턴 종료
-      continue;
+      return;   // 어떤 행동이든 턴 종료
     }
     // 환전: 체력이 위험하면 돈·정신력을 HP로
     const ex = card((c) => c.type === 'trade' && c.kind === 'exchange');
@@ -65,7 +64,7 @@ async function cpuTurn(p) {
       const plan = cpuExchangePlan(p);
       if (plan) {
         await tradeExchange(p, ex, plan);
-        continue;
+        return;
       }
     }
     break;
