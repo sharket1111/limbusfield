@@ -45,7 +45,35 @@ function splatterSVG(seed) {
 
 const DEF_GLYPH = { guard: '🛡', evade: '💨', counter: '↩' };
 
+// E.G.O 카드: 금테 액자 + 원형 그림 + 위력/코인 + 효과 글
+const EGO_GRADE = (cost) => (cost <= 10 ? 'Ⅰ' : cost <= 20 ? 'Ⅱ' : cost <= 30 ? 'Ⅲ' : cost <= 45 ? 'Ⅳ' : 'Ⅴ');
+function egoCardHTML(c, opt = {}) {
+  const sin = SINS[sinOf(c)];
+  const atk = c.kind === 'attack';
+  const dt = atk ? DTYPES[dtypeOf(c)] : null;
+  const nCoins = Array.isArray(c.coins) ? c.coins.length : RULES.coins;
+  const coinPow = Array.isArray(c.coins) && c.coins.length ? c.coins[0].power : RULES.coinPower;
+  const sub = { attack: '', heal: `HP +${c.power}`, cure: '상태 이상 해제', steal: '카드 강탈', stun: '대상 기절' }[c.kind] || '';
+  const strip = (t) => t.replace(/<[^>]+>/g, '').replace(/^\[[^\]]*\]\s*/, '');
+  const lines = (c.effects || []).slice(0, 2).map((e) => `<span>${KEYWORDS[e.key] ? KEYWORDS[e.key].icon : ''}${strip(effectText(e))}</span>`);
+  if (!lines.length && sub) lines.push(`<span>${sub}</span>`);
+  if (fxOf(c).includes('all')) lines.push('<span>전체 공격</span>');
+  let img = '';
+  if (c.img) { ensureImgStyle(c); img = ` has-img cimg-${c.id}`; }
+  return `<div class="card ego-card t-ego r${c.rarity || 1} ${opt.big ? 'big' : ''} ${opt.cls || ''}" style="--sin:${sin.color};--sin2:${shade(sin.color, -0.5)};--sin3:${shade(sin.color, 0.35)}" ${opt.uid ? `data-uid="${c.uid}"` : ''}>
+    <div class="eg-top"><span class="eg-tag">E.G.O</span><span class="eg-grade" title="등급">${EGO_GRADE(c.cost)}</span></div>
+    <div class="eg-risk" title="정신력 소모">🧠 정신력 <b>-${c.cost}</b></div>
+    <div class="eg-art${img}">${img ? '' : '<span>✧</span>'}</div>
+    <div class="eg-gem" title="${sin.name}">${sin.name[0]}</div>
+    <div class="eg-name">${c.name}</div>
+    <div class="eg-stats">${atk ? `<b class="eg-pow">${c.power}</b><span class="eg-coins">${'<i></i>'.repeat(Math.min(5, nCoins))}<small>+${coinPow}</small></span>${dt ? `<span class="eg-dt" title="${dt.name}">${dt.icon}</span>` : ''}` : `<b class="eg-sub">${sub}</b>`}</div>
+    <div class="eg-txt">${lines.join('')}</div>
+    <span class="c-cost" title="코스트">${cardCost(c)}</span>
+  </div>`;
+}
+
 function cardHTML(c, opt = {}) {
+  if (c.type === 'ego') return egoCardHTML(c, opt);
   const a = ATTR[c.attr] || null;
   const sin = SINS[sinOf(c)];
   let stat = '', glyph = '◆';
@@ -374,7 +402,7 @@ function renderMe() {
 
   const hand = $('#hand');
   const sel = G.sel;
-  const order = { weapon: 0, ego: 1, trade: 2, item: 3, armor: 4 };
+  const order = { ego: -1, weapon: 0, trade: 2, item: 3, armor: 4 };
   const val = (c) => c.atk || c.def || c.cost || 0;
   const sorted = [...p.hand].filter(Boolean).sort((a, b) => order[a.type] - order[b.type] || val(b) - val(a));
   hand.innerHTML = sorted.map((c) => {
@@ -389,7 +417,7 @@ function renderMe() {
     else if (myTurn && sel.main && sel.main.type === 'weapon' && c.type === 'weapon' && c.plus) cls = 'can-plus';
     if (c.type === 'ego' && !canPayEgo(p, c)) cls += ' no-sp';
     return cardHTML(c, { uid: true, cls });
-  }).join('') || `<div class="muted empty-hand">${p.alive ? '손패가 없습니다' : '탈락 — 관전 중'}</div>`;
+  }).join('').replace(/(<div class="card ego-card[\s\S]*?)(<div class="card (?!ego-card))/, '$1<div class="ego-sep"></div>$2').replace(/^/, egoCount(p) ? `<div class="ego-label">E.G.O<br><b>${egoCount(p)}/${RULES.maxEgo}</b></div>` : '') || `<div class="muted empty-hand">${p.alive ? '손패가 없습니다' : '탈락 — 관전 중'}</div>`;
   $$('.card', hand).forEach((el) => {
     el.onclick = () => { if (!DRAG.used) onHandClick(+el.dataset.uid); };
     el.onmouseenter = () => { G.hover = p.hand.find((c) => c && c.uid === +el.dataset.uid); renderInfo(); };

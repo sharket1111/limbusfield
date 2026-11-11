@@ -286,7 +286,7 @@ const Net = {
         const defs = Object.values(G.defs).filter((c) => c.custom);
         // 나만의 키워드 정의 (이름·기반·색·특수 효과)
         const kws = Object.entries(KEYWORDS).filter(([, k]) => k.custom && !k.preview)
-          .map(([id, k]) => ({ id, name: k.name, base: k.base, hue: +((k.icon.match(/hue-rotate\((\d+)deg/) || [])[1] || 0), fx: k.fx }));
+          .map(([id, k]) => ({ id, name: k.name, base: k.base, hue: k.hue || 0, img: k.img || '', fx: k.fx }));
         for (const p of G.players) {
           if (p.ctrl === 'remote') this.tp.send(p.cid, { t: 'start', meId: p.id, defs, kws, speed: s.speed });
         }

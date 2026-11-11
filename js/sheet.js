@@ -116,6 +116,15 @@ function firePassives(p, on, enemy = null) {
 // ---------------- 나만의 키워드 ----------------
 const KW_BASES = ['burn', 'bleed', 'tremor', 'rupture', 'sinking', 'poise'];
 const KW_ID_RE = /^(p\d+_)?k_[a-z0-9_]+$/i;
+const KW_PNG_RE = /^data:image\/png;base64,[A-Za-z0-9+/=]+$/;
+
+// 나만의 키워드 그림 아이콘: id마다 CSS 규칙 하나
+const KW_IMG_RULES = new Map();
+function syncKwImgStyle() {
+  let el = document.getElementById('kw-imgs');
+  if (!el) { el = document.createElement('style'); el.id = 'kw-imgs'; document.head.appendChild(el); }
+  el.textContent = [...KW_IMG_RULES].map(([id, img]) => `.kwi.kwc-${id}{background-image:url("${img}")}`).join('\n');
+}
 
 function normalizeKeyword(k) {
   if (!k || typeof k !== 'object') return null;
@@ -124,6 +133,8 @@ function normalizeKeyword(k) {
     name: cleanText(k.name, 8) || '새 키워드',
     base: KW_BASES.includes(k.base) ? k.base : 'burn',
     hue: Math.max(0, Math.min(359, Math.round(+k.hue || 0))),
+    // 직접 올리거나 그린 아이콘 (작은 PNG)
+    img: typeof k.img === 'string' && KW_PNG_RE.test(k.img) && k.img.length < 60000 ? k.img : '',
     fx: (Array.isArray(k.fx) ? k.fx : []).slice(0, 3).map((e) => {
       const n = normalizeEffect({ ...(e || {}), when: 'use' });
       return n && !EFFECT_DEFS[n.key].preRoll ? n : null;
@@ -137,19 +148,25 @@ function keywordCost(k) {
   return 4 + Math.round(fx * 0.8);
 }
 
-const kwIconHTML = (base, hue) => `<i class="kwi kw-${base}"${hue ? ` style="filter:hue-rotate(${hue}deg)"` : ''}></i>`;
+const kwIconHTML = (base, hue, imgId = '') => (imgId ? `<i class="kwi kwc-${imgId}"></i>`
+  : `<i class="kwi kw-${base}"${hue ? ` style="filter:hue-rotate(${hue}deg)"` : ''}></i>`);
 
 // KEYWORDS에 등록 (id는 그대로 — 경기에서는 앞에 플레이어 번호를 붙여 등록)
 function registerKeyword(k, id = k.id) {
   const b = KEYWORDS[k.base];
   if (!b || !KW_ID_RE.test(id)) return;
+  if (k.img) { KW_IMG_RULES.set(id, k.img); syncKwImgStyle(); }
   KEYWORDS[id] = {
-    name: k.name, icon: kwIconHTML(k.base, k.hue), emoji: b.emoji, debuff: b.debuff, base: k.base, custom: true,
+    hue: k.hue, img: k.img || '',
+    name: k.name, icon: kwIconHTML(k.base, k.hue, k.img ? id : ''), emoji: b.emoji, debuff: b.debuff, base: k.base, custom: true,
     fx: k.fx, desc: `${b.name} 기반 — ${b.desc}${k.fx.length ? ` · 발동 시: ${k.fx.map((e) => effectText(e).replace(/^\[[^\]]*\]\s*/, '')).join(', ')}` : ''}`,
   };
 }
 function clearCustomKeywords(previewOnly = false) {
-  for (const id of Object.keys(KEYWORDS)) if (KEYWORDS[id].custom && (!previewOnly || KEYWORDS[id].preview)) delete KEYWORDS[id];
+  for (const id of Object.keys(KEYWORDS)) {
+    if (KEYWORDS[id].custom && (!previewOnly || KEYWORDS[id].preview)) { delete KEYWORDS[id]; KW_IMG_RULES.delete(id); }
+  }
+  syncKwImgStyle();
 }
 // 공방에서 편집 중인 팩의 키워드를 이름 그대로 미리 등록 (설명·코스트 계산용)
 function previewKeywords(list) {

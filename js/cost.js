@@ -79,7 +79,7 @@ function cardValue(c) {
     if (fx.includes('nullify')) v += 15;
   } else if (c.type === 'ego') {
     if (c.kind === 'attack') {
-      v = c.power + coins + eff - (c.cost || 0) * 0.25;
+      v = c.power + coins + eff;
       if (fx.includes('pierce')) v += 4;
       if (fx.includes('all')) v *= 1.6;
       else if (c.weight > 1) v *= 1 + 0.3 * (c.weight - 1);
@@ -95,6 +95,9 @@ function cardValue(c) {
   }
   return v;
 }
+
+// 직접 만든 E.G.O의 정신력 소모: 카드 코스트 × 5 (5 ~ 60)
+const egoSpCost = (c) => Math.max(5, Math.min(60, cardCost(c) * 5));
 
 function cardCost(c) {
   return Math.max(1, Math.min(12, Math.round(cardValue(c) / 3)));

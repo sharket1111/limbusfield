@@ -222,7 +222,7 @@ function cpuTradeOption(p) {
     }
   }
   const buyCard = p.hand.find((c) => c.type === 'trade' && c.kind === 'buy');
-  if (buyCard && p.won >= 4 && p.hand.length < RULES.maxHand) {
+  if (buyCard && p.won >= 4 && !handFull(p)) {
     const t = [...opp].sort((a, b) => b.hand.length - a.hand.length)[0];
     const score = t.hand.length ? 4 + Math.min(p.won, 20) * 0.2 : -99;
     if (!best || score > best.score) best = { kind: 'buy', card: buyCard, target: t, score };

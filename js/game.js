@@ -132,15 +132,14 @@ function drawCards(p, n = 1) {
       nightEvent(p);
       continue;
     }
-    if (p.hand.length >= RULES.maxHand) break;
+    if (handFull(p)) break;
     if (!pile.deck.length) {
       if (!pile.discard.length) break;
       pile.deck = shuffle(pile.discard);
       pile.discard = [];
       log(`<i>${G.deckMode === 'personal' ? p.name + '의 ' : ''}버려진 카드를 다시 섞어 덱을 만들었습니다.</i>`);
     }
-    p.hand.push(pile.deck.pop());
-    got++;
+    if (takeCard(p, pile.deck.pop())) got++;
   }
   return got;
 }
@@ -168,6 +167,22 @@ function nightEvent(p) {
   }
 }
 
+// E.G.O는 손패 장수에 세지 않고 따로 최대 RULES.maxEgo장까지 보관
+const egoCount = (p) => p.hand.filter((c) => c && c.type === 'ego').length;
+const handCards = (p) => p.hand.filter((c) => c && c.type !== 'ego').length;
+const handFull = (p) => handCards(p) >= RULES.maxHand;
+// 카드를 손에 넣기 (E.G.O 보관함이 가득이면 버림)
+function takeCard(p, card) {
+  if (card.type === 'ego' && egoCount(p) >= RULES.maxEgo) {
+    toDiscard(p, card);
+    log(`${pname(p)} E.G.O 보관함이 가득 차 ${cname(card)}을(를) 버렸습니다 (최대 ${RULES.maxEgo}개)`);
+    toastTo(p, `E.G.O는 최대 ${RULES.maxEgo}개까지 보관됩니다`, 'bad');
+    return false;
+  }
+  p.hand.push(card);
+  return true;
+}
+
 function discardCard(p, card) {
   const i = p.hand.findIndex((c) => c.uid === card.uid);
   if (i >= 0) p.hand.splice(i, 1);
@@ -175,7 +190,7 @@ function discardCard(p, card) {
 }
 const toDiscard = (p, card) => pileOf(p).discard.push(card);
 function giveCard(p, card) {
-  if (p.alive && p.hand.length < RULES.maxHand) p.hand.push(card); else toDiscard(p, card);
+  if (p.alive && (card.type === 'ego' || !handFull(p))) takeCard(p, card); else toDiscard(p, card);
 }
 
 // ------------------------------------------------------------
@@ -512,7 +527,7 @@ function armorDef(target, armors) {
 async function performAttack(attacker, cards, targets) {
   const info = buildAttack(cards);
   if (cards[0].type === 'ego') changeSp(attacker, -cards[0].cost);
-  for (const c of cards) discardCard(attacker, c);
+  for (const c of cards) if (c.type !== 'ego') discardCard(attacker, c);   // E.G.O는 계속 보관
 
   if (info.fx.includes('all')) targets = others(attacker);
   else if (info.weight > 1 && targets.length) {
@@ -897,7 +912,7 @@ function landHit(attacker, target, dmg, info, rolls = []) {
 // ------------------------------------------------------------
 async function useSupport(p, card, target) {
   if (card.type === 'ego') changeSp(p, -card.cost, true);
-  discardCard(p, card);
+  else discardCard(p, card);   // E.G.O는 계속 보관
   const tgtText = target && target !== p ? pname(target) : pname(p);
   showStage(p, [card], tgtText);
   log(`${pname(p)} ${cname(card)} 사용`);
@@ -953,9 +968,9 @@ async function useSupport(p, card, target) {
 // 기도: 손패가 가득 차 있으면 가장 쓸모없는 카드 1장을 버리고 뽑음
 function pray(p) {
   let tossed = null;
-  if (p.hand.length >= RULES.maxHand) {
+  if (handFull(p)) {
     const val = (c) => (c.type === 'armor' ? c.def * 0.8 : c.type === 'weapon' ? c.atk : 10) + (c.rarity || 1) * 3;
-    tossed = [...p.hand].sort((a, b) => val(a) - val(b))[0];
+    tossed = p.hand.filter((c) => c.type !== 'ego').sort((a, b) => val(a) - val(b))[0];
     discardCard(p, tossed);
   }
   const n = drawCards(p, 1);

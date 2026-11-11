@@ -74,7 +74,7 @@ function normalizeCard(c) {
     out.dtype = DTYPES[c.dtype] ? c.dtype : 'slash';
   }
   if (c.type === 'armor') { out.def = num(c.def, 0, 60, 8); out.kind = ['guard', 'evade', 'counter'].includes(c.kind) ? c.kind : 'guard'; }
-  if (c.type === 'ego') { out.kind = 'attack'; out.power = num(c.power, 0, 60, 10); out.cost = num(c.cost, 0, 45, 10); }
+  if (c.type === 'ego') { out.kind = 'attack'; out.power = num(c.power, 0, 60, 10); out.cost = egoSpCost(out); }
   if (c.type === 'item') out.kind = 'custom';
   return out;
 }
@@ -282,7 +282,7 @@ function renderWorkshop() {
       ${t === 'armor' ? `<label>수비 종류
         <select data-f="kind">${[['guard', '🛡 가드 (여러 장 동시)'], ['evade', '💨 회피'], ['counter', '↩ 반격']].map(([k, l]) => `<option value="${k}" ${c.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
       </label>` : ''}
-      ${t === 'ego' ? `<label>소모 정신력 <input type="number" data-f="cost" data-num min="0" max="45" value="${c.cost}"></label>` : ''}
+      ${t === 'ego' ? `<label title="카드 코스트 × 5 (최대 60)">소모 정신력 (자동) <input type="number" value="${egoSpCost(normalizeCard(c) || c)}" disabled></label>` : ''}
       ${t === 'weapon' || t === 'ego' ? `<label>공격 유형
         <select data-f="dtype">${Object.entries(DTYPES).map(([k, v]) => `<option value="${k}" ${dtypeOf(c) === k ? 'selected' : ''}>${v.icon} ${v.name}</option>`).join('')}</select></label>` : ''}
       ${t === 'weapon' || t === 'ego' ? `<label title="한 번에 맞는 사람 수. 고른 대상 + 나머지 상대 중 무작위">공격 가중치 (맞는 사람 수)
@@ -631,10 +631,13 @@ function renderKwm() {
       지금 합계 <b>${total}</b> (최대 ${RULES.maxKeywords}개)</p>
     ${pk.keywords.map((k, i) => `<div class="kwm-box">
       <div class="kwm-head">
-        <span class="kwm-icon">${kwIconHTML(k.base, k.hue)}</span>
+        <span class="kwm-icon">${KEYWORDS[k.id] ? KEYWORDS[k.id].icon : kwIconHTML(k.base, k.hue)}</span>
         <input data-kw="${i}.name" maxlength="8" value="${k.name}">
         <label>기반 <select data-kw="${i}.base">${KW_BASES.map((b) => `<option value="${b}" ${k.base === b ? 'selected' : ''}>${KEYWORDS[b].emoji} ${KEYWORDS[b].name}</option>`).join('')}</select></label>
-        <label class="kwm-hue">색 <input type="range" min="0" max="359" value="${k.hue}" data-kw="${i}.hue" data-num></label>
+        ${k.img ? '' : `<label class="kwm-hue">색 <input type="range" min="0" max="359" value="${k.hue}" data-kw="${i}.hue" data-num></label>`}
+        <label class="btn small">🖼 그림 올리기<input type="file" accept="image/*" data-kwimg="${i}" hidden></label>
+        <button class="btn small" data-kwdraw="${i}">✏ 직접 그리기</button>
+        ${k.img ? `<button class="btn small" data-kwnoimg="${i}">기본 아이콘</button>` : ''}
         <span class="cost-tag">코스트 ${keywordCost(k)}</span>
         <button class="btn small del" data-delkw="${i}">키워드 삭제</button>
       </div>
@@ -645,7 +648,43 @@ function renderKwm() {
   $('#kwm-add').disabled = pk.keywords.length >= RULES.maxKeywords;
 }
 
+// ---- 키워드 아이콘 그리기 판 (96×96) ----
+const DRAW = { kw: null, color: '#ff3b5c', size: 8, erase: false, last: null };
+function openDrawPad(k) {
+  if (!k) return;
+  DRAW.kw = k;
+  const cv = $('#draw-canvas'), ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  if (k.img) { const im = new Image(); im.onload = () => ctx.drawImage(im, 0, 0, cv.width, cv.height); im.src = k.img; }
+  $('#draw-modal').classList.add('show');
+}
+function initDrawPad() {
+  const cv = $('#draw-canvas'), ctx = cv.getContext('2d');
+  const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * cv.width, y: ((e.clientY - r.top) / r.height) * cv.height }; };
+  const stroke = (a, b) => {
+    ctx.globalCompositeOperation = DRAW.erase ? 'destination-out' : 'source-over';
+    ctx.strokeStyle = DRAW.color; ctx.fillStyle = DRAW.color;
+    ctx.lineWidth = DRAW.size; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  };
+  cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); DRAW.last = pos(e); stroke(DRAW.last, { x: DRAW.last.x + 0.1, y: DRAW.last.y }); });
+  cv.addEventListener('pointermove', (e) => { if (!DRAW.last) return; const p = pos(e); stroke(DRAW.last, p); DRAW.last = p; });
+  const up = () => { DRAW.last = null; };
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+  $('#draw-color').oninput = (e) => { DRAW.color = e.target.value; DRAW.erase = false; $('#draw-erase').classList.remove('on'); };
+  $('#draw-size').oninput = (e) => { DRAW.size = +e.target.value; };
+  $('#draw-erase').onclick = (e) => { DRAW.erase = !DRAW.erase; e.target.classList.toggle('on', DRAW.erase); };
+  $('#draw-clear').onclick = () => ctx.clearRect(0, 0, cv.width, cv.height);
+  $('#draw-cancel').onclick = () => $('#draw-modal').classList.remove('show');
+  $('#draw-ok').onclick = () => {
+    if (DRAW.kw) DRAW.kw.img = cv.toDataURL('image/png');
+    $('#draw-modal').classList.remove('show');
+    renderKwm();
+  };
+}
+
 function initPackExtras() {
+  initDrawPad();
   const sheetM = $('#sheet-modal'), kwM = $('#kw-modal');
   const save = () => { commitPacks(); renderWorkshop(); };
   $('#ws-sheet').onclick = () => { renderSheet(); sheetM.classList.add('show'); };
@@ -695,7 +734,16 @@ function initPackExtras() {
     edPack().keywords = list.map(normalizeKeyword).filter(Boolean);
     if (rerender) renderKwm();
   };
-  kb.addEventListener('change', (e) => onKw(e.target, true));
+  kb.addEventListener('change', async (e) => {
+    if (e.target.dataset.kwimg !== undefined) {
+      const f = e.target.files && e.target.files[0];
+      const k = edPack().keywords[+e.target.dataset.kwimg];
+      if (!f || !k) return;
+      try { k.img = await shrinkIcon(f); renderKwm(); } catch { toast('그림을 읽을 수 없습니다', 'bad'); }
+      return;
+    }
+    onKw(e.target, true);
+  });
   kb.addEventListener('input', (e) => {
     if (e.target.type === 'range') { onKw(e.target, false); const ic = e.target.closest('.kwm-box'); if (ic) $('.kwm-icon', ic).innerHTML = kwIconHTML(getPath(edPack().keywords, e.target.dataset.kw.replace(/\.hue$/, '')).base, +e.target.value); }
     else if (e.target.dataset.kw && /\.name$/.test(e.target.dataset.kw)) onKw(e.target, false);
@@ -703,7 +751,9 @@ function initPackExtras() {
   kb.addEventListener('click', (e) => {
     const list = edPack().keywords;
     const t = e.target.dataset;
-    if (t.addfx !== undefined) { const k = list[+t.addfx]; if (k && k.fx.length < 3) k.fx.push({ ...newFx(), key: 'sp', target: 'enemy', pot: -3 }); }
+    if (t.kwdraw !== undefined) { openDrawPad(list[+t.kwdraw]); return; }
+    if (t.kwnoimg !== undefined) { list[+t.kwnoimg].img = ''; }
+    else if (t.addfx !== undefined) { const k = list[+t.addfx]; if (k && k.fx.length < 3) k.fx.push({ ...newFx(), key: 'sp', target: 'enemy', pot: -3 }); }
     else if (t.delkw !== undefined) {
       const k = list[+t.delkw];
       if (!k || !confirm(`「${k.name}」 키워드를 지울까요? 이 키워드를 쓰는 카드 효과는 동작하지 않게 됩니다.`)) return;

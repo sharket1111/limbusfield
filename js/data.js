@@ -204,6 +204,7 @@ const RULES = {
   maxHp: 100,
   startHand: 7,
   maxHand: 10,
+  maxEgo: 5,          // 한 번 얻은 E.G.O는 계속 쓸 수 있음 — 최대 보관 수 (손패 장수와 따로 셈)
   drawPerTurn: 1,
   // 정신력
   minSp: -45,

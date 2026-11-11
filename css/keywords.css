@@ -38,3 +38,9 @@
 .kwm-hue input { width: 110px; vertical-align: middle; }
 .kwm-fx { display: flex; flex-direction: column; gap: 4px; }
 .passive { color: var(--gold); font-weight: 700; }
+/* 키워드 아이콘 그리기 판 */
+.panel.draw-panel { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+#draw-canvas { width: 288px; height: 288px; image-rendering: pixelated; touch-action: none; cursor: crosshair; border-radius: 8px;
+  background: repeating-conic-gradient(#2a2630 0 25%, #1c1920 0 50%) 0 0 / 24px 24px; box-shadow: 0 0 0 1px var(--line); }
+.draw-tools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; }
+@media (max-height: 520px) { #draw-canvas { width: 200px; height: 200px; } }

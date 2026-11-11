@@ -106,3 +106,49 @@ select[data-f="sin"] option[value="gluttony"] { color: #6a9a18; }
 select[data-f="sin"] option[value="gloom"] { color: #2a9fc4; }
 select[data-f="sin"] option[value="pride"] { color: #2f55c2; }
 select[data-f="sin"] option[value="envy"] { color: #8a3dbf; }
+
+/* ---------- E.G.O 카드: 금테 액자 + 원형 그림 ---------- */
+.card.ego-card { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 5px 4px; border-radius: 5px;
+  background: linear-gradient(180deg, #2a2018, #120d0a 60%, #1a120c) !important; color: #f4e6c4;
+  box-shadow: inset 0 0 0 2px #b8863a, inset 0 0 0 3px #3a2810, inset 0 0 0 4px #e0b866, 0 4px 10px rgba(0, 0, 0, .5) !important; }
+.ego-card .eg-top { width: 100%; display: flex; justify-content: space-between; align-items: center; font-size: 8px; font-weight: 900; letter-spacing: .08em; color: #e0b866; }
+.ego-card .eg-tag { padding: 0 3px; border: 1px solid #b8863a; }
+.ego-card .eg-grade { font-family: 'Noto Serif KR', serif; font-size: 11px; color: #fff2cc; text-shadow: 0 0 4px #e0b866; }
+.ego-card .eg-risk { width: 100%; font-size: 7.5px; padding: 1px 3px; background: linear-gradient(90deg, #6b1414, #3a0d0d 70%, transparent); color: #ffd0c4; white-space: nowrap; }
+.ego-card .eg-risk b { color: #fff; }
+.ego-card .eg-art { position: relative; width: 62px; aspect-ratio: 1; border-radius: 50%; margin-top: 1px; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 35%, var(--sin3), var(--sin) 45%, var(--sin2) 80%); background-size: cover; background-position: center;
+  box-shadow: 0 0 0 2px #e0b866, 0 0 0 4px #3a2810, 0 0 0 5px #b8863a, 0 0 12px var(--sin); }
+.ego-card .eg-art span { font-size: 26px; color: #fff8e0; text-shadow: 0 0 10px #fff; opacity: .85; }
+.ego-card .eg-gem { position: absolute; right: 4px; top: 34px; width: 15px; height: 15px; display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 900; color: #fff;
+  clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0 50%); background: radial-gradient(circle at 40% 35%, var(--sin3), var(--sin) 60%, var(--sin2)); }
+.ego-card .eg-name { width: 106%; text-align: center; font-size: 9.5px; font-weight: 900; padding: 1px 4px; margin-top: 2px; color: #1a1006; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: linear-gradient(90deg, transparent, #e0b866 15%, #fff0c0 50%, #e0b866 85%, transparent); }
+.ego-card .eg-stats { display: flex; align-items: center; gap: 4px; min-height: 18px; }
+.ego-card .eg-pow { font-family: 'Noto Serif KR', serif; font-size: 18px; font-weight: 900; color: #fff2cc; text-shadow: 0 0 6px var(--sin), 0 1px 1px #000; line-height: 1; }
+.ego-card .eg-coins { display: inline-flex; align-items: center; gap: 1px; }
+.ego-card .eg-coins i { width: 7px; height: 7px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #ffd9a0, #c9813a 55%, #7a4a1d); }
+.ego-card .eg-coins small { font-size: 7px; color: #e0b866; margin-left: 1px; }
+.ego-card .eg-dt { font-size: 10px; }
+.ego-card .eg-sub { font-size: 10px; color: #c8ffd8; }
+.ego-card .eg-txt { width: 100%; display: flex; flex-direction: column; gap: 1px; font-size: 7px; line-height: 1.2; color: #d8ccb4; overflow: hidden; max-height: 26px; }
+.ego-card .eg-txt span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ego-card .eg-txt .kwi { width: 1em; height: 1em; }
+.ego-card .c-cost { top: -4px; left: -4px; }
+.card.ego-card.big .eg-art { width: 74px; }
+.card.ego-card.r3 { box-shadow: inset 0 0 0 2px #ffd23f, inset 0 0 0 3px #3a2810, inset 0 0 0 4px #fff0b0, 0 0 10px #ffd23f88 !important; }
+.card.ego-card.no-sp { opacity: .45; }
+/* 손패의 E.G.O 보관함 구분 */
+.ego-label { flex: 0 0 auto; align-self: center; font-size: 10px; font-weight: 900; letter-spacing: .08em; color: #e0b866; text-align: center; line-height: 1.3; writing-mode: horizontal-tb; }
+.ego-label b { font-size: 13px; color: #fff2cc; }
+.ego-sep { flex: 0 0 2px; align-self: stretch; margin: 6px 4px; background: linear-gradient(180deg, transparent, #b8863a, transparent); }
+@media (max-width: 760px) {
+  .card.ego-card .eg-art { width: 52px; }
+  .card.ego-card .eg-txt { display: none; }
+}
+@media (max-height: 520px) {
+  #hand .card.ego-card { padding: 3px; gap: 1px; }
+  #hand .ego-card .eg-art { width: 40px; }
+  #hand .ego-card .eg-risk, #hand .ego-card .eg-txt { display: none; }
+  #hand .ego-card .eg-pow { font-size: 14px; }
+}
