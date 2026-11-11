@@ -256,7 +256,7 @@ function renderField() {
       el.className = 'pf';
       el.dataset.pid = p.id;
       el.dataset.look = lookKey;
-      el.innerHTML = `<div class="pf-turn">▼</div><div class="pf-aim">🎯</div>
+      el.innerHTML = `<div class="pf-turn">▼</div><div class="pf-aim">🎯</div><div class="pf-sk"></div>
         <div class="f-fig"><div class="ff-base"></div><svg class="ff-ring"></svg>
           <div class="f-body ${p.id === G.meId ? '' : 'flip'}">${charSVG(look, { gear: null })}</div></div>
         <div class="f-foot"></div>`;
@@ -272,6 +272,11 @@ function renderField() {
     el.title = `${p.name} — HP ${p.hp}/${p.maxHp || RULES.maxHp} · 흐트러짐 ${p.stg}/${p.stgMax || RULES.staggerMax}\n${resLine(p)}`
       + (p.passives && p.passives.length ? `\n패시브: ${p.passives.map((ps) => passiveText(ps).replace(/<[^>]+>/g, '')).join(' / ')}` : '');
     $('.ff-base', el).className = `ff-base t-${team}`;
+    // 머리 위: 고른 스킬 (나) / 지금 쓰는 공격 (나를 노리는 적)
+    const sk = $('.pf-sk', el);
+    const skCards = p.id === G.meId && G.sel.main && !G.defendReq ? [G.sel.main, ...G.sel.plus]
+      : G.defendReq && G.defendReq.attacker === p ? G.defendReq.info.cards : [];
+    sk.innerHTML = skCards.map((c) => `<span class="pk-hex" style="--sin:${SINS[sinOf(c)].color}" title="${c.name}">${c.type === 'weapon' || c.kind === 'attack' ? DTYPES[dtypeOf(c)].icon : '✧'}<b>${c.atk || c.power || ''}</b></span>`).join('');
     const ring = $('.ff-ring', el);
     ring.outerHTML = ringSVG(p, stag);
     $('.f-foot', el).outerHTML = footHTML(p, {
@@ -352,14 +357,15 @@ function dragEnd(useIt) {
   renderAll();
 }
 
+// 끌어다 놓으면 그 카드와 대상을 고르기만 함 — 오른쪽 기어(START)를 눌러야 확정
+//  이미 무기를 골랐고 끈 카드가 보조 무기면 보조 칸에 추가
 function dropUse(card, target) {
   const s = G.sel;
-  if (!(s.main && s.main.uid === card.uid)) G.sel = { main: card, plus: [], target: null, goods: null };
-  G.sel.plus = G.sel.plus.filter((c) => c.uid !== card.uid);
-  G.sel.target = target;
-  const st = actionState();
-  if (st.ok) onAction();
-  else { toast(st.label); renderAll(); }
+  if (s.main && s.main.type === 'weapon' && card.type === 'weapon' && card.plus && s.main.uid !== card.uid) {
+    if (!s.plus.some((c) => c.uid === card.uid)) s.plus.push(card);
+  } else if (!(s.main && s.main.uid === card.uid)) G.sel = { main: card, plus: [], target: s.target, goods: null };
+  if (target) G.sel.target = target;
+  renderAll();
 }
 
 function initDrag() {
@@ -390,15 +396,23 @@ function initDrag() {
 function renderMe() {
   const p = me();
   const myTurn = !!G.humanResolve;
+  // 왼쪽 아래: 육각 초상화 둘레에 HP·흐트러짐 원형 게이지, 위쪽에 보유 E.G.O 색 보석, 정신력 원
+  //  초상화를 꾹 누르면 E.G.O 선택 화면
+  const stag = has(p, 'staggered');
   $('#me').innerHTML = `
-    <div class="me-card ${myTurn ? 'active' : ''} ${G.defendReq ? 'under-attack' : ''} ${p.alive ? '' : 'dead'}">
-      <div class="opp-av">${p.look ? portraitSVG(p.look) : p.avatar}</div>
-      <div class="opp-info">
-        <div class="opp-name">${p.name}</div>
-        <div class="opp-hand"><span class="won">${p.won}안</span> · 코인 앞면 ${Math.round(headChance(p.sp) * 100)}%</div>
-        <div class="me-turn">${G.defendReq ? '⚠ 공격받는 중' : myTurn ? '▶ 내 차례' : G.over ? '' : '대기 중'}</div>
+    <div class="me-card me-hud ${myTurn ? 'active' : ''} ${G.defendReq ? 'under-attack' : ''} ${p.alive ? '' : 'dead'}">
+      ${profileHTML(p)}
+      <div class="mh-stats">
+        <div class="mh-name">${p.name} <span class="me-turn">${G.defendReq ? '⚠ 공격받는 중' : myTurn ? '▶ 내 차례' : G.over ? '' : '대기 중'}</span></div>
+        <div class="mh-res"><span class="mh-res-t">내성 정보</span>${Object.entries(DTYPES).map(([d, v]) => {
+          const m = resOf(p, d);
+          return `<span class="${m < 1 ? 'good' : m > 1 ? 'bad' : ''}" title="${v.name} ${resInfo(m)[1]}">${v.icon}${m.toFixed(2)}</span>`;
+        }).join('')}</div>
+        <div class="mh-line">흐트러짐 <b class="${stag ? 'neg' : ''}">${stag ? '💢 흐트러짐' : `${p.stg}/${p.stgMax || RULES.staggerMax}`}</b> · <span class="won">${p.won}안</span> · 앞면 ${Math.round(headChance(p.sp) * 100)}%</div>
+        <div class="mh-line muted">E.G.O ${egoCount(p)}/${RULES.maxEgo} — 초상화를 꾹 누르면 E.G.O 선택</div>
       </div>
     </div>`;
+  bindProfilePress();
 
   const hand = $('#hand');
   const sel = G.sel;
@@ -426,18 +440,22 @@ function renderMe() {
   // 버튼
   const act = $('#btn-act');
   const prev0 = $('#preview');
+  renderSlots();
+  const cap = $('#gear-cap');
   if (G.defendReq) {
     const R = G.defendReq;
-    act.textContent = R.picked.length ? { clash: '⚔ 합!', guard: '🛡 가드', evade: '💨 회피', counter: '↩ 반격' }[R.mode] : '그대로 받기';
+    cap.textContent = R.picked.length ? { clash: '⚔ 합!', guard: '🛡 가드', evade: '💨 회피', counter: '↩ 반격' }[R.mode] : '그대로 받기';
     act.disabled = false;
+    act.classList.add('ready');
     $('#btn-pray').disabled = true;
     $('#btn-cancel').disabled = !R.picked.length;
     prev0.innerHTML = defPreview();
     return;
   }
   const st = actionState();
-  act.textContent = myTurn ? st.label : G.over ? '게임 종료' : '상대 차례';
+  cap.textContent = myTurn ? st.label : G.over ? '게임 종료' : '상대 차례';
   act.disabled = !myTurn || !st.ok || G.acting;
+  act.classList.toggle('ready', !act.disabled);
   $('#btn-pray').disabled = !myTurn || G.acting;
   $('#btn-cancel').disabled = !myTurn || G.acting || !sel.main;
 
@@ -475,6 +493,104 @@ function resLine(p) {
   return Object.entries(DTYPES).map(([d, v]) => `${v.icon}${v.name} ${resInfo(resOf(p, d))[1]} ×${resOf(p, d)}`).join(' · ');
 }
 
+// 육각 초상화 + 둘레 게이지(HP 바깥, 흐트러짐 안쪽) + E.G.O 보석 + 정신력 원 + HP 숫자
+const PROF_ARC_A0 = 145, PROF_ARC_A1 = -145;   // 아래쪽이 비는 호 (290°)
+function profArc(r) {
+  const pt = (a) => [50 + r * Math.cos((a * Math.PI) / 180), 50 - r * Math.sin((a * Math.PI) / 180)];
+  const [x0, y0] = pt(-125), [x1, y1] = pt(-55 + 360);
+  return `M${x0.toFixed(1)} ${y0.toFixed(1)} A${r} ${r} 0 1 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`;
+}
+function profileHTML(p) {
+  const maxHp = p.maxHp || RULES.maxHp, stgMax = p.stgMax || RULES.staggerMax;
+  const stag = has(p, 'staggered');
+  const hp = Math.max(0, Math.min(100, (p.hp / maxHp) * 100));
+  const sg = stag ? 100 : Math.max(0, Math.min(100, (p.stg / stgMax) * 100));
+  const egos = p.hand.filter((c) => c && c.type === 'ego');
+  // E.G.O 보석: 위쪽 호를 따라 (왼쪽 위 → 오른쪽 위)
+  const gems = Array.from({ length: RULES.maxEgo }, (_, i) => {
+    const a = (150 - i * 30) * (Math.PI / 180);
+    const x = 50 + 54 * Math.cos(a), y = 50 - 54 * Math.sin(a);
+    const c = egos[i];
+    const cls = !c ? 'empty' : canPayEgo(p, c) ? 'ok' : 'no';
+    return `<i class="pg ${cls}" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%;${c ? `--sin:${SINS[sinOf(c)].color}` : ''}" title="${c ? `${c.name} — 정신력 ${c.cost}` : '빈 E.G.O 칸'}"></i>`;
+  }).join('');
+  return `<div class="mh-face" id="my-profile" title="꾹 누르면 E.G.O 선택">
+    <svg class="mh-ring" viewBox="0 0 100 100" aria-hidden="true">
+      <path class="trk" d="${profArc(45)}" pathLength="100"/>
+      <path class="hp" d="${profArc(45)}" pathLength="100" stroke-dasharray="${hp.toFixed(1)} 100"/>
+      <path class="trk s" d="${profArc(39)}" pathLength="100"/>
+      <path class="stg ${stag ? 'broken' : ''}" d="${profArc(39)}" pathLength="100" stroke-dasharray="${sg.toFixed(1)} 100"/>
+    </svg>
+    <div class="mh-hex">${p.look ? portraitSVG(p.look) : p.avatar}</div>
+    ${gems}
+    <b class="mh-hpn">${p.hp}</b>
+    <span class="mh-sp" style="--spc:${spColor(p.sp)}" title="정신력 ${p.sp}">${p.sp}</span>
+  </div>`;
+}
+
+// 초상화 꾹 누르기(또는 오른쪽 클릭) → E.G.O 선택 화면
+let PRESS_T = 0;
+function bindProfilePress() {
+  const el = $('#my-profile');
+  if (!el) return;
+  const cancel = () => { clearTimeout(PRESS_T); el.classList.remove('pressing'); };
+  el.onpointerdown = (e) => {
+    cancel();
+    el.classList.add('pressing');
+    PRESS_T = setTimeout(() => { el.classList.remove('pressing'); openEgoPick(); }, 450);
+    e.preventDefault();
+  };
+  el.onpointerup = cancel;
+  el.onpointerleave = cancel;
+  el.oncontextmenu = (e) => { e.preventDefault(); cancel(); openEgoPick(); };
+}
+
+function openEgoPick() {
+  const p = me();
+  if (!p) return;
+  const egos = p.hand.filter((c) => c && c.type === 'ego');
+  const canUse = !!G.humanResolve && !G.acting && !G.defendReq;
+  $('#egopick-list').innerHTML = egos.length ? egos.map((c) => {
+    const ok = canPayEgo(p, c);
+    return `<div class="ep-item ${ok ? '' : 'no-sp'} ${G.sel.main && G.sel.main.uid === c.uid ? 'picked' : ''}" data-ego="${c.uid}">
+      ${egoCardHTML(c, { big: true })}
+      <div class="ep-desc">${describeCard(c).lines.map((l) => `<span>${l}</span>`).join('')}</div>
+      <span class="ep-state">${!ok ? '정신력 부족' : canUse ? '눌러서 선택' : '내 차례에 선택 가능'}</span>
+    </div>`;
+  }).join('') : '<p class="muted">보유한 E.G.O가 없습니다. 덱에서 E.G.O 카드를 얻으면 여기에 쌓입니다 (최대 5개).</p>';
+  $('#egopick-foot').innerHTML = `${profileHTML(p)}
+    <div class="ep-res"><b>내성 정보</b>${Object.entries(DTYPES).map(([d, v]) => {
+      const m = resOf(p, d);
+      return `<span class="${m < 1 ? 'good' : m > 1 ? 'bad' : ''}">${v.icon} ${v.name} <b>${m.toFixed(2)}</b> <small>${resInfo(m)[1]}</small></span>`;
+    }).join('')}</div>`;
+  $('#egopick').classList.add('show');
+}
+
+// 가운데 아래: 고른 스킬 칸 (주 스킬 1개 + 보조 무기들) → 대상
+function slotHTML(c, role) {
+  if (!c) return `<div class="slot empty ${role}"><span>${role === 'main' ? '스킬' : '보조'}</span></div>`;
+  const sin = SINS[sinOf(c)];
+  const val = c.type === 'weapon' ? c.atk : c.type === 'ego' ? c.power || c.cost : c.type === 'armor' ? c.def : '';
+  const glyph = c.type === 'weapon' || (c.type === 'ego' && c.kind === 'attack') ? DTYPES[dtypeOf(c)].icon : c.type === 'ego' ? '✧' : c.type === 'trade' ? '💱' : c.type === 'armor' ? DEF_GLYPH[defKind(c)] : '✚';
+  return `<div class="slot ${role} filled" data-slot="${c.uid}" style="--sin:${sin.color};--sin2:${shade(sin.color, -0.5)}" title="${c.name} (눌러서 빼기)">
+    <span class="sl-g">${glyph}</span><b>${val}</b><em>${c.name}</em></div>`;
+}
+function renderSlots() {
+  const box = $('#slots');
+  if (!box) return;
+  const p = me(), s = G.sel;
+  if (G.defendReq) {
+    const picked = defPicked();
+    box.innerHTML = `<span class="sl-tag def">대응</span>${picked.map((c, i) => slotHTML(c, i ? 'plus' : 'main')).join('') || slotHTML(null, 'main')}`;
+  } else {
+    const canPlus = s.main && s.main.type === 'weapon' && p.hand.some((c) => c && c.type === 'weapon' && c.plus && c !== s.main && !s.plus.includes(c));
+    const t = s.target;
+    box.innerHTML = `<span class="sl-tag">${G.humanResolve ? '스킬' : '대기'}</span>${slotHTML(s.main, 'main')}${s.plus.map((c) => slotHTML(c, 'plus')).join('')}${canPlus ? slotHTML(null, 'plus') : ''}
+      <span class="sl-arrow">➤</span><div class="slot-target ${t ? 'on' : ''}">${t ? `${t.look ? portraitSVG(t.look) : ''}<b>${t.name}</b>` : '<span>대상</span>'}</div>`;
+  }
+  $$('.slot.filled', box).forEach((el) => (el.onclick = () => { if (G.humanResolve || G.defendReq) onHandClick(+el.dataset.slot); }));
+}
+
 function renderInfo() {
   const c = G.hover;
   const box = $('#info');
@@ -498,8 +614,8 @@ function renderAll() {
   renderMe();
   renderInfo();
   const left = RULES.nightTurn - G.turn;
-  $('#round').innerHTML = `TURN ${G.turn}` + (isNight() ? ' <span class="night-tag">🌙 뒷골목의 밤</span>'
-    : left <= 20 ? ` <span class="muted small">밤까지 ${left}턴</span>` : '');
+  $('#round').textContent = G.turn;
+  $('#night-tag').innerHTML = isNight() ? '<span class="night-tag">🌙 뒷골목의 밤</span>' : left <= 20 ? `<span class="muted small">밤까지 ${left}턴</span>` : '';
   $('#deckcount').textContent = pileText();
   $('#mode-tag').textContent = G.mode === 'solo' ? '' : G.mode === 'host' ? '🌐 방장' : '🌐 참가';
   if (G.mode === 'host') Net.queueState();
@@ -979,6 +1095,19 @@ function initUI() {
     showTitle();
   };
   initDrag();
+  $('#egopick-close').onclick = () => $('#egopick').classList.remove('show');
+  $('#egopick-list').addEventListener('click', (e) => {
+    const it = e.target.closest('[data-ego]');
+    if (!it) return;
+    const p = me(), c = p.hand.find((x) => x && x.uid === +it.dataset.ego);
+    if (!c) return;
+    if (!G.humanResolve || G.acting || G.defendReq) { toast('내 차례에만 E.G.O를 고를 수 있습니다'); return; }
+    if (!canPayEgo(p, c)) { toast(`정신력이 부족합니다 (${c.cost} 필요)`, 'bad'); return; }
+    G.sel = { main: c, plus: [], target: G.sel.target, goods: null };
+    G.hover = c;
+    $('#egopick').classList.remove('show');
+    renderAll();
+  });
   window.addEventListener('resize', () => drawArrows());
   $('#btn-log').onclick = () => document.body.classList.toggle('log-open');
   $('#btn-act').onclick = onAction;
