@@ -64,6 +64,7 @@ function normalizeCard(c) {
   const allowFx = { weapon: ['all', 'pierce', 'twice', 'lifesteal'], ego: ['all', 'pierce'], armor: ['reflect'], item: [] }[c.type];
   out.fx = (Array.isArray(c.fx) ? c.fx : []).filter((f) => allowFx.includes(f));
   if (c.type === 'weapon') { out.atk = num(c.atk, 0, 60, 8); out.plus = !!c.plus; }
+  if (c.type === 'weapon' || c.type === 'ego') out.weight = num(c.weight, 1, 5, 1);
   if (c.type === 'armor') { out.def = num(c.def, 0, 60, 8); out.kind = ['guard', 'evade', 'counter'].includes(c.kind) ? c.kind : 'guard'; }
   if (c.type === 'ego') { out.kind = 'attack'; out.power = num(c.power, 0, 60, 10); out.cost = num(c.cost, 0, 45, 10); }
   if (c.type === 'item') out.kind = 'custom';
@@ -256,6 +257,8 @@ function renderWorkshop() {
         <select data-f="kind">${[['guard', '🛡 가드 (여러 장 동시)'], ['evade', '💨 회피'], ['counter', '↩ 반격']].map(([k, l]) => `<option value="${k}" ${c.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
       </label>` : ''}
       ${t === 'ego' ? `<label>소모 정신력 <input type="number" data-f="cost" data-num min="0" max="45" value="${c.cost}"></label>` : ''}
+      ${t === 'weapon' || t === 'ego' ? `<label title="한 번에 맞는 사람 수. 고른 대상 + 나머지 상대 중 무작위">공격 가중치 (맞는 사람 수)
+        <input type="number" data-f="weight" data-num min="1" max="5" value="${c.weight || 1}" ${c.fx.includes('all') ? 'disabled' : ''}></label>` : ''}
       <label>가격(안) <input type="number" data-f="price" data-num min="0" max="99" value="${c.price}"></label>
       <label>덱 장수 <input type="number" data-f="count" data-num min="1" max="5" value="${c.count}"></label>
       <label>죄악 (카드 색)

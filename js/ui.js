@@ -99,6 +99,7 @@ function describeCard(c) {
   if (c.type === 'ego') parts.push(`위력 ${c.power} · 정신력 ${c.cost} 소모`);
   if (a) parts.push(`${a.icon} ${a.name}`);
   fxOf(c).forEach((f) => parts.push(FX_TEXT[f]));
+  if (c.weight > 1 && !fxOf(c).includes('all')) parts.push(`가중치 ${c.weight} (최대 ${c.weight}명 공격)`);
   if (c.plus) parts.push('보조 무기 — 다른 무기에 덧붙여 공격력 합산');
   parts.push(`가격 ${c.price || 0}안`);
   const armor = c.type === 'armor';
@@ -149,15 +150,54 @@ const ctrlBadge = (p) => (G.mode === 'solo' ? '' : `<span class="ctrl ${p.ctrl}"
 // ------------------------------------------------------------
 function fieldLayout(n) {
   const spread = (k, a, b) => (k === 1 ? [(a + b) / 2] : Array.from({ length: k }, (_, i) => a + ((b - a) * i) / (k - 1)));
-  if (n <= 3) return spread(n, 54, 86).map((x) => ({ x, b: 6, s: 1, z: 3 }));
+  if (n <= 3) return spread(n, 54, 86).map((x) => ({ x, b: 4, s: 1, z: 3 }));
   // 4명 이상: 앞줄·뒷줄을 번갈아 지그재그로
-  return spread(n, 46, 90).map((x, i) => (i % 2 ? { x, b: 33, s: 0.82, z: 2 } : { x, b: 3, s: 1, z: 4 }));
+  return spread(n, 46, 90).map((x, i) => (i % 2 ? { x, b: 15, s: 0.86, z: 2 } : { x, b: 2, s: 1, z: 4 }));
 }
 
 const fieldTargeting = () => {
   const c = G.dragCard || (G.humanResolve && !G.acting ? G.sel.main : null);
   return !!c && needsTarget(c);
 };
+
+// ------------------------------------------------------------
+//  대상 화살표: 끌어다 놓는 중(파랑) / 대상 지정됨(노랑) / 적이 나를 노림(빨강)
+// ------------------------------------------------------------
+const ARROW_DEFS = `<defs>${['blue', 'yellow', 'red'].map((c) => `<marker id="ah-${c}" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto"><path d="M0,0 L10,5 L0,10 L3,5 Z" class="ah ${c}"/></marker>`).join('')}</defs>`;
+let ARROW_TIMER = 0;
+function pfAnchor(pid, fr) {
+  const el = document.querySelector(`#fighters .pf[data-pid="${pid}"] .f-fig`);
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2 - fr.left, y: r.top + r.height * 0.42 - fr.top };
+}
+function arrowPath(a, b) {
+  const dist = Math.hypot(b.x - a.x, b.y - a.y);
+  const lift = Math.max(36, dist * 0.32);
+  // 끝을 조금 앞에서 멈춰 화살촉이 캐릭터에 묻히지 않게
+  const mx = (a.x + b.x) / 2, my = Math.min(a.y, b.y) - lift;
+  const k = Math.max(0, 1 - 18 / Math.max(1, dist));
+  const ex = mx + (b.x - mx) * k, ey = my + (b.y - my) * k;
+  return `M${a.x.toFixed(1)},${a.y.toFixed(1)} Q${mx.toFixed(1)},${my.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`;
+}
+function drawArrows(pointer) {
+  const svg = $('#arrows'), field = $('#field');
+  if (!svg || !field || !G.players.length) return;
+  const fr = field.getBoundingClientRect();
+  const out = [];
+  const add = (from, to, cls) => { if (from && to) out.push(`<path class="arw ${cls}" d="${arrowPath(from, to)}" marker-end="url(#ah-${cls})"/>`); };
+  const meA = pfAnchor(G.meId, fr);
+  if (G.defendReq && G.defendReq.attacker) add(pfAnchor(G.defendReq.attacker.id, fr), meA, 'red');
+  if (G.dragCard) {
+    let to = null;
+    if (DRAG.over) to = pfAnchor(+DRAG.over.dataset.pid, fr);
+    else if (pointer) to = { x: pointer.x - fr.left, y: pointer.y - fr.top };
+    add(meA, to, 'blue');
+  } else if (G.humanResolve && !G.acting && G.sel.target && G.sel.target.alive) {
+    add(meA, pfAnchor(G.sel.target.id, fr), 'yellow');
+  }
+  svg.innerHTML = ARROW_DEFS + out.join('');
+}
 
 function renderField() {
   const box = $('#fighters');
@@ -167,7 +207,7 @@ function renderField() {
   const mine = me();
   const others = G.players.filter((p) => p.id !== G.meId);
   const lay = fieldLayout(others.length);
-  const spots = [[mine, { x: 20, b: 6, s: 1.06, z: 5 }], ...others.map((p, i) => [p, lay[i]])];
+  const spots = [[mine, { x: 20, b: 4, s: 1.06, z: 5 }], ...others.map((p, i) => [p, lay[i]])];
   const targeting = fieldTargeting();
   const cur = G.players[G.current];
   const keep = new Set();
@@ -206,6 +246,9 @@ function renderField() {
   }
   $$('.pf', box).forEach((el) => { if (!keep.has(el.dataset.pid)) el.remove(); });
   $('#field').classList.toggle('aiming', targeting);
+  drawArrows();
+  clearTimeout(ARROW_TIMER);
+  ARROW_TIMER = setTimeout(() => drawArrows(), 400);   // 자리 이동 애니메이션이 끝난 뒤 다시
   const hint = $('#field-hint');
   if (hint) {
     hint.textContent = G.dragCard ? (needsTarget(G.dragCard) ? '공격할 상대에게 놓으세요' : '무대에 놓으면 사용합니다')
@@ -247,6 +290,7 @@ function dragMove(x, y) {
   if (okTarget) { pf.classList.add('drop-over'); DRAG.over = pf; }
   g.classList.toggle('can-drop', !!okTarget || (!needsTarget(DRAG.card) && inField));
   DRAG.inField = inField;
+  if (needsTarget(DRAG.card)) drawArrows({ x, y });
 }
 
 function dragEnd(useIt) {
@@ -827,6 +871,7 @@ function initUI() {
     showTitle();
   };
   initDrag();
+  window.addEventListener('resize', () => drawArrows());
   $('#btn-log').onclick = () => document.body.classList.toggle('log-open');
   $('#btn-act').onclick = onAction;
   $('#btn-pray').onclick = onPray;

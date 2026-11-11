@@ -172,3 +172,25 @@ body.log-open #log { display: block; position: fixed; right: 8px; top: 52px; bot
   #field .arena:not(.big) .total b { font-size: 28px; }
   #field .arena:not(.big) .clash-banner { top: 6%; font-size: 18px; }
 }
+
+/* ---------- 바닥: 캐릭터가 모두 땅을 딛고 서 있게 ---------- */
+#field .floor-plane { position: absolute; left: 0; right: 0; bottom: 0; height: 47%; z-index: 1; pointer-events: none; overflow: hidden;
+  background: linear-gradient(180deg, transparent 0, color-mix(in srgb, var(--ground-far) 85%, transparent) 9%, var(--ground-far) 30%, var(--ground-near) 100%); }
+#field .floor-plane::before { content: ''; position: absolute; left: -40%; right: -40%; top: 8%; bottom: -30%; transform: perspective(240px) rotateX(58deg); transform-origin: 50% 0;
+  background: repeating-linear-gradient(90deg, transparent 0 78px, var(--lane) 78px 80px), repeating-linear-gradient(180deg, transparent 0 46px, var(--lane) 46px 47px); opacity: .55; }
+#field .floor-plane::after { content: ''; position: absolute; left: 0; right: 0; top: 8%; height: 2px; background: linear-gradient(90deg, transparent, var(--lane), transparent); }
+#field::after { z-index: 1; }
+.pf .ff-base { width: 92%; bottom: -2%; }
+.pf .f-fig::after { content: ''; position: absolute; left: 50%; bottom: 1%; width: 70%; height: 9%; transform: translateX(-50%); border-radius: 50%; z-index: 0;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, .65), transparent 70%); }
+
+/* ---------- 대상 화살표 ---------- */
+#arrows { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 5; pointer-events: none; overflow: visible; }
+#arrows .arw { fill: none; stroke-width: 4; stroke-linecap: round; stroke-dasharray: 14 9; animation: arwflow .5s linear infinite; }
+@keyframes arwflow { to { stroke-dashoffset: -23; } }
+#arrows .arw.blue { stroke: #4aa8ff; filter: drop-shadow(0 0 5px #4aa8ff); }
+#arrows .arw.yellow { stroke: #ffd23f; filter: drop-shadow(0 0 5px #ffb02e); }
+#arrows .arw.red { stroke: #ff3b30; filter: drop-shadow(0 0 6px #ff3b30); stroke-width: 5; }
+#arrows .ah.blue { fill: #4aa8ff; } #arrows .ah.yellow { fill: #ffd23f; } #arrows .ah.red { fill: #ff3b30; }
+@media (max-height: 520px) { #arrows .arw { stroke-width: 3; } #arrows .arw.red { stroke-width: 3.5; } }
+@media (max-height: 520px) { .pf-aim { font-size: 22px; } }

@@ -27,6 +27,7 @@ function scoreAttack(p, cards) {
   for (const e of fxs) s += KEYWORDS[e.key] ? ((e.pot || 0) + (e.cnt || 0)) * 0.6 : e.key === 'stun' ? 6 : 2;
   if (info.fx.includes('twice')) s *= 1.8;
   if (info.fx.includes('all')) s = (s - info.atk * (1 - headChance(p.sp))) * 0.7 * Math.max(1, others(p).length);
+  else if (info.weight > 1) s *= 1 + 0.75 * (Math.min(info.weight, others(p).length) - 1);
   if (info.fx.includes('pierce')) s += 4;
   for (const f of ['lifesteal', 'drainsp', 'mind', 'holy']) if (info.fx.includes(f)) s += 3;
   if (cards[0].type === 'ego') s -= cards[0].cost * 0.35; // 정신력 아끼기

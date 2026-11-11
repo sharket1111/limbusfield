@@ -477,7 +477,9 @@ function buildAttack(cards) {
     if (i > 0 && Array.isArray(c.coins)) coins = coins.concat(c.coins.map((x) => ({ ...x })));
   });
   const coinMax = coins.reduce((s, c) => s + c.power, 0);
-  return { atk, attr: main.attr, fx: [...fx], effects, coins, coinMax, cards, name: cards.map((c) => c.name).join(' + ') };
+  // 공격 가중치: 이 공격에 맞는 사람 수 (주 카드 기준)
+  const weight = Math.max(1, Math.min(5, Math.round(+main.weight || 1)));
+  return { atk, attr: main.attr, fx: [...fx], effects, coins, coinMax, cards, weight, name: cards.map((c) => c.name).join(' + ') };
 }
 
 // 수비 코인
@@ -510,11 +512,17 @@ async function performAttack(attacker, cards, targets) {
   for (const c of cards) discardCard(attacker, c);
 
   if (info.fx.includes('all')) targets = others(attacker);
+  else if (info.weight > 1 && targets.length) {
+    // 가중치: 고른 대상 + 나머지 상대 중 무작위로 (가중치 - 1)명
+    const main = targets[0];
+    const extra = shuffle(others(attacker).filter((q) => q !== main)).slice(0, info.weight - 1);
+    targets = [main, ...extra];
+  }
   const tText = info.fx.includes('all') ? '<b>전원</b>' : targets.map(pname).join(', ');
   const a = ATTR[info.attr];
   showStage(attacker, cards, tText,
     `<span style="color:${a.color}">${a.icon} ${a.name}</span> 위력 <b>${info.atk}</b> + 코인 ${info.coins.length}개` +
-    (info.fx.length ? ' · ' + info.fx.map((f) => FX_TEXT[f]).join(', ') : ''));
+    (info.fx.length ? ' · ' + info.fx.map((f) => FX_TEXT[f]).join(', ') : '') + (info.weight > 1 && !info.fx.includes('all') ? ` · 가중치 ${info.weight}` : ''));
   log(`${pname(attacker)} ▶ ${tText} : ${cards.map(cname).join(' + ')} <span class="muted">(${a.icon}${info.atk})</span>`);
   renderAll();
   await sleep(700);

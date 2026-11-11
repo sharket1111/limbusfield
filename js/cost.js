@@ -60,6 +60,7 @@ function cardValue(c) {
     if (fx.includes('holy')) v += 2;
     if (fx.includes('twice')) v *= 1.6;
     if (fx.includes('all')) v *= 1.6;
+    else if (c.weight > 1) v *= 1 + 0.3 * (c.weight - 1);
     if (c.plus) v += 1.5;
   } else if (c.type === 'armor') {
     const extra = Array.isArray(c.coins) ? coinValue(c.coins) : 0;
@@ -73,6 +74,7 @@ function cardValue(c) {
       v = c.power + coins + eff - (c.cost || 0) * 0.25;
       if (fx.includes('pierce')) v += 4;
       if (fx.includes('all')) v *= 1.6;
+      else if (c.weight > 1) v *= 1 + 0.3 * (c.weight - 1);
     } else {
       v = { heal: (c.power || 0) * 0.7, cure: 4, steal: 8, stun: 10 }[c.kind] || 5;
       v -= (c.cost || 0) * 0.15;
