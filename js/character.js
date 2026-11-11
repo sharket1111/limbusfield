@@ -346,7 +346,7 @@ function validateClash(d) {
     aBase: num(d.aBase), dBase: num(d.dBase), pa: num(d.pa), pd: num(d.pd),
     aCoins: coins(d.aCoins), dCoins: coins(d.dCoins), aCards: refs(d.aCards), dCards: refs(d.dCards),
     gear: d.gear === 'orb' ? 'orb' : 'blade', attr: ATTR[d.attr] ? d.attr : 'phys', stag: d.stag ? 1 : 0,
-    spd: Math.max(0.05, Math.min(2, +d.spd || 1)),
+    spd: Math.max(0.05, Math.min(2, +d.spd || 1)), ego: d.ego ? 1 : 0,
     rounds: Array.isArray(d.rounds) ? d.rounds.slice(0, 12).map((r) => ({ a: coins(r && r.a), d: coins(r && r.d), pa: num(r && r.pa), pd: num(r && r.pd), w: side(r && r.w) })) : [],
     strike: d.strike && typeof d.strike === 'object' ? { s: side(d.strike.s), coins: coins(d.strike.coins),
       hits: Array.isArray(d.strike.hits) ? d.strike.hits.slice(0, 16).map((h) => ({ d: Math.max(0, Math.min(999, +(h && h.d) || 0)), m: h && h.m ? 1 : 0 })) : [] } : null,
@@ -452,6 +452,64 @@ const LETTERBOX = `<svg class="lbox" viewBox="0 0 100 56" preserveAspectRatio="n
   <polyline points="-1,35 35,57" class="lb-gold"/><polyline points="-1,40 28,57" class="lb-gold thin"/>
 </svg>`;
 
+// ------------------------------------------------------------
+//  E.G.O 발현 연출
+//  금빛 번개선이 화면을 가르며 깨짐 → 죄악 색 폭발 → 찢긴 붓터치 띠 위로 캐릭터 클로즈업,
+//  왼쪽 위 이름 · 오른쪽 아래 E.G.O 이름 띠 · 가운데 대사
+// ------------------------------------------------------------
+const EGO_CINE_MS = 2700;
+function tornEdge(seed, top) {
+  const rng = seededRng(seed);
+  const pts = [];
+  for (let x = 0; x <= 100; x += 2 + rng() * 3) pts.push([Math.min(100, x), (top ? 14 : 86) + (rng() - 0.5) * 7 + (rng() < 0.15 ? (top ? 5 : -5) : 0)]);
+  pts.push([100, top ? 14 : 86]);
+  const line = pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  return top ? `<polygon class="te-fill" points="0,0 100,0 ${pts.slice().reverse().map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}"/><polyline class="te-glow" points="${line}"/>`
+    : `<polygon class="te-fill" points="0,100 ${line} 100,100"/><polyline class="te-glow" points="${line}"/>`;
+}
+function validateEgoCine(d) {
+  if (!d || typeof d !== 'object') return null;
+  return { pid: +d.pid, card: { uid: +(d.card && d.card.uid) || 0, id: String((d.card && d.card.id) || '') }, spd: Math.max(0.05, Math.min(2, +d.spd || 1)) };
+}
+function renderEgoCine(d) {
+  if (!d) return;
+  const p = G.players.find((q) => q.id === d.pid);
+  const c = resolveCard(d.card);
+  if (!p || !c) return;
+  const sin = SINS[sinOf(c)];
+  const box = $('#egocine');
+  const seed = Math.floor(Math.random() * 1e6);
+  const quote = cleanText(c.flavor || '', 60) || `「${c.name}」`;
+  box.style.setProperty('--egoc', sin.color);
+  box.style.setProperty('--egoc2', shade(sin.color, -0.6));
+  box.style.setProperty('--spd', d.spd);
+  box.innerHTML = `
+    <div class="ec-crack">${burstSVG(seed)}</div>
+    <div class="ec-flash"></div>
+    <div class="ec-band">
+      <div class="ec-bg"></div>
+      <div class="ec-char">${charSVG(p.look, { gear: 'orb', gearColor: sin.color })}</div>
+      <svg class="ec-torn" viewBox="0 0 100 100" preserveAspectRatio="none">${tornEdge(seed, true)}${tornEdge(seed + 7, false)}</svg>
+      <div class="ec-who">${p.name}</div>
+      <div class="ec-quote">${quote}</div>
+      <div class="ec-name"><small>E.G.O</small>${c.name}</div>
+    </div>`;
+  box.classList.remove('play');
+  void box.offsetWidth;
+  box.classList.add('show', 'play');
+  const token = String(seed);
+  box.dataset.token = token;
+  box.onclick = () => box.classList.remove('show', 'play');
+  setTimeout(() => { if (box.dataset.token === token) box.classList.remove('show', 'play'); }, EGO_CINE_MS * d.spd);
+}
+// 방장: 연출을 띄우고 참가자에게도 보냄. 끝날 때까지 기다림
+async function playEgoCine(p, card) {
+  const d = validateEgoCine({ pid: p.id, card: cardRef(card), spd: G.speed });
+  renderEgoCine(d);
+  netFx('egocine', d);
+  await sleep(EGO_CINE_MS);
+}
+
 let STREET_CACHE = '';
 const streetSVG = () => (STREET_CACHE || (STREET_CACHE = buildBackstreet()));
 
@@ -500,7 +558,7 @@ function renderClash(d) {
 
   box.classList.remove('pop');
   box.innerHTML = `
-    <div class="arena ${full ? 'big' : ''} m-${d.mode}" style="--spd:${d.spd};--attr:${attrColor}">
+    <div class="arena ${full ? 'big' : ''} m-${d.mode} ${d.ego ? 'ego-mode' : ''}" style="--spd:${d.spd};--attr:${attrColor};--egoc:${sinCol(aCards[0])}">
       <div class="cam">
         <div class="street">${streetSVG()}<div class="rain"></div></div>
         <div class="floor"></div>
@@ -739,7 +797,8 @@ function renderCharEdit() {
     <div class="ce-poses">
       ${[['', '대기'], ['swing', '공격'], ['guard', '방어'], ['cast', 'E.G.O'], ['hurt', '피격']].map(([k, l]) => `<button class="btn small ${CE.pose === k ? 'on' : ''}" data-pose="${k}">${l}</button>`).join('')}
     </div>
-    <div class="ce-portrait">${portraitSVG(L)}<span class="muted small">패널 초상화</span></div>`;
+    <div class="ce-portrait">${portraitSVG(L)}<span class="muted small">패널 초상화</span></div>
+    <label class="ce-namebox">이름 <input id="ce-name" maxlength="10" value="${name}"></label>`;
 
   const optRow = (k) => `<div class="ce-row"><span class="ce-label">${LOOK_LABEL[k]}</span><div class="ce-opts">
     ${LOOK_OPTIONS[k].map(([id, label]) => `<button class="btn small ${L[k] === id ? 'on' : ''}" data-opt="${k}" data-val="${id}">${label}</button>`).join('')}</div></div>`;
@@ -778,6 +837,14 @@ function initCharEdit() {
     toast('캐릭터를 저장했습니다');
     if (typeof netLookChanged === 'function') netLookChanged();
   };
+  $('#ce-preview').addEventListener('change', (e) => {
+    if (e.target.id !== 'ce-name') return;
+    const name = cleanText(e.target.value.trim(), 10);
+    if (!name) return;
+    $('#in-name').value = name;
+    try { localStorage.setItem('af_name', name); } catch { /* 무시 */ }
+    renderCharEdit();
+  });
   $('#ce-preview').addEventListener('click', (e) => {
     const b = e.target.closest('[data-pose]');
     if (b) { CE.pose = b.dataset.pose; renderCharEdit(); }

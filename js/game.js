@@ -526,7 +526,7 @@ function armorDef(target, armors) {
 
 async function performAttack(attacker, cards, targets) {
   const info = buildAttack(cards);
-  if (cards[0].type === 'ego') changeSp(attacker, -cards[0].cost);
+  if (cards[0].type === 'ego') { changeSp(attacker, -cards[0].cost); await playEgoCine(attacker, cards[0]); }
   for (const c of cards) if (c.type !== 'ego') discardCard(attacker, c);   // E.G.O는 계속 보관
 
   if (info.fx.includes('all')) targets = others(attacker);
@@ -793,7 +793,7 @@ function showClash(attacker, info, ca, pa, target, dcards, cd, pd, mode, result,
     aId: attacker.id, dId: target.id, mode, result,
     aBase: info.atk, dBase, aCoins: pack(ca), dCoins: pack(cd), pa: pa || 0, pd: pd || 0,
     aCards: info.cards.map(cardRef), dCards: dcards.map(cardRef),
-    gear: info.cards[0].type === 'ego' ? 'orb' : 'blade', attr: info.attr,
+    gear: info.cards[0].type === 'ego' ? 'orb' : 'blade', attr: info.attr, ego: info.cards[0].type === 'ego' ? 1 : 0,
     stag: has(target, 'staggered') ? 1 : 0, spd: G.speed, dmg, dmgTo,
   });
   renderClash(d);
@@ -911,7 +911,7 @@ function landHit(attacker, target, dmg, info, rolls = []) {
 //  도구 / 보조 E.G.O
 // ------------------------------------------------------------
 async function useSupport(p, card, target) {
-  if (card.type === 'ego') changeSp(p, -card.cost, true);
+  if (card.type === 'ego') { changeSp(p, -card.cost, true); await playEgoCine(p, card); }
   else discardCard(p, card);   // E.G.O는 계속 보관
   const tgtText = target && target !== p ? pname(target) : pname(p);
   showStage(p, [card], tgtText);

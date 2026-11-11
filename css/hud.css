@@ -218,3 +218,7 @@ html[data-theme="light"] .mh-line { color: var(--muted); }
   .gear-btn { width: 50px; height: 50px; }
   .me-card.me-hud { padding: 2px 2px 0 8px; }
 }
+.mh-rename { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.mh-rename:hover { color: var(--gold); text-decoration: underline; }
+.ce-namebox { display: flex; gap: 8px; align-items: center; justify-content: center; font-size: 13px; }
+.ce-namebox input { width: 140px; }

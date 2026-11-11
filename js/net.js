@@ -435,6 +435,7 @@ const Net = {
 
   applyFx(k, d) {
     if (k === 'clash') renderClash(validateClash(d));
+    else if (k === 'egocine') renderEgoCine(validateEgoCine(d));
     else if (k === 'log') logLocal(sanitizeHTML(d.html));
     else if (k === 'stage') stageLocal(sanitizeHTML(d.html));
     else if (k === 'clear') clearStageLocal(sanitizeHTML(d.text || ''));

@@ -256,7 +256,7 @@ function renderField() {
       el.className = 'pf';
       el.dataset.pid = p.id;
       el.dataset.look = lookKey;
-      el.innerHTML = `<div class="pf-turn">▼</div><div class="pf-aim">🎯</div><div class="pf-sk"></div>
+      el.innerHTML = `<div class="pf-turn">▼</div><div class="pf-sk"></div>
         <div class="f-fig"><div class="ff-base"></div><svg class="ff-ring"></svg>
           <div class="f-body ${p.id === G.meId ? '' : 'flip'}">${charSVG(look, { gear: null })}</div></div>
         <div class="f-foot"></div>`;
@@ -281,7 +281,8 @@ function renderField() {
     ring.outerHTML = ringSVG(p, stag);
     $('.f-foot', el).outerHTML = footHTML(p, {
       stag,
-      extra: `${G.mode === 'solo' || p.id === G.meId ? '' : `<i class="ctrl ${p.ctrl}">${p.ctrl === 'cpu' ? 'CPU' : '👤'}</i>`}🂠 ${handCount(p)} · <span class="won">${p.won}안</span>`,
+      // 손패 장수는 나만 보임
+      extra: `${G.mode === 'solo' || p.id === G.meId ? '' : `<i class="ctrl ${p.ctrl}">${p.ctrl === 'cpu' ? 'CPU' : '👤'}</i>`}${p.id === G.meId ? `🂠 ${handCount(p)} · ` : ''}<span class="won">${p.won}안</span>`,
     });
   }
   $$('.pf', box).forEach((el) => { if (!keep.has(el.dataset.pid)) el.remove(); });
@@ -403,7 +404,7 @@ function renderMe() {
     <div class="me-card me-hud ${myTurn ? 'active' : ''} ${G.defendReq ? 'under-attack' : ''} ${p.alive ? '' : 'dead'}">
       ${profileHTML(p)}
       <div class="mh-stats">
-        <div class="mh-name">${p.name} <span class="me-turn">${G.defendReq ? '⚠ 공격받는 중' : myTurn ? '▶ 내 차례' : G.over ? '' : '대기 중'}</span></div>
+        <div class="mh-name"><button class="mh-rename" id="btn-rename" title="이름 바꾸기">${p.name} ✎</button> <span class="me-turn">${G.defendReq ? '⚠ 공격받는 중' : myTurn ? '▶ 내 차례' : G.over ? '' : '대기 중'}</span></div>
         <div class="mh-res"><span class="mh-res-t">내성 정보</span>${Object.entries(DTYPES).map(([d, v]) => {
           const m = resOf(p, d);
           return `<span class="${m < 1 ? 'good' : m > 1 ? 'bad' : ''}" title="${v.name} ${resInfo(m)[1]}">${v.icon}${m.toFixed(2)}</span>`;
@@ -413,6 +414,8 @@ function renderMe() {
       </div>
     </div>`;
   bindProfilePress();
+  const rn = $('#btn-rename');
+  if (rn) rn.onclick = renameMe;
 
   const hand = $('#hand');
   const sel = G.sel;
@@ -527,6 +530,21 @@ function profileHTML(p) {
     <b class="mh-hpn">${p.hp}</b>
     <span class="mh-sp" style="--spc:${spColor(p.sp)}" title="정신력 ${p.sp}">${p.sp}</span>
   </div>`;
+}
+
+// 내 이름 바꾸기 (혼자 하기·방장은 바로 반영, 참가자는 다음 판부터)
+function renameMe() {
+  const p = me();
+  if (!p) return;
+  const name = cleanText((prompt('내 이름', p.name) || '').trim(), 10);
+  if (!name || name === p.name) return;
+  try { localStorage.setItem('af_name', name); } catch { /* 무시 */ }
+  const inp = $('#in-name'); if (inp) inp.value = name;
+  const mp = $('#mp-name'); if (mp) mp.value = name;
+  if (G.mode === 'client') { toast('이름은 다음 판부터 바뀝니다'); return; }
+  log(`${pname(p)} → 이름을 「${name}」(으)로 바꿨습니다`);
+  p.name = name;
+  renderAll();
 }
 
 // 초상화 꾹 누르기(또는 오른쪽 클릭) → E.G.O 선택 화면
