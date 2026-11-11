@@ -259,27 +259,46 @@ function statusIcons(p, withSp = true) {
   return out.join('');
 }
 
-// 정신력 얼굴 아이콘: 높으면 웃고, 낮으면 찡그림
-function moodFace(sp) {
-  const mouth = sp >= 15 ? 'M7 13.2 Q10 16 13 13.2' : sp <= -15 ? 'M7 15 Q10 12.2 13 15' : 'M7.2 14 L12.8 14';
-  return `<svg class="ff-face" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8.2"/><circle class="e" cx="7.3" cy="8.4" r="1.25"/><circle class="e" cx="12.7" cy="8.4" r="1.25"/><path d="${mouth}"/></svg>`;
+// 정신력 색: -45 빨강 → 0 회색 → 45 하늘색
+function spColor(sp) {
+  const t = Math.max(-1, Math.min(1, sp / RULES.maxSp));
+  const gray = [150, 150, 158], to = t < 0 ? [255, 59, 48] : [111, 211, 255], k = Math.abs(t);
+  return '#' + gray.map((v, i) => Math.round(v + (to[i] - v) * k).toString(16).padStart(2, '0')).join('');
 }
 
-// 캐릭터 발 밑: 빨간 HP 숫자 + 정신력 얼굴 아이콘 / 얇은 HP·흐트러짐 줄 / 키워드 아이콘 / 이름
-//  받침 고리는 내 캐릭터 파랑, 다른 사람 빨강
+// 타원 호 (y가 아래로 커지는 좌표, 각도 a0에서 a1로 줄어드는 방향 = 앞쪽을 지나감)
+function ellArc(cx, cy, rx, ry, a0, a1) {
+  const pt = (a) => [cx + rx * Math.cos((a * Math.PI) / 180), cy + ry * Math.sin((a * Math.PI) / 180)];
+  const [x0, y0] = pt(a0), [x1, y1] = pt(a1);
+  return `M${x0.toFixed(1)} ${y0.toFixed(1)} A${rx} ${ry} 0 ${Math.abs(a0 - a1) > 180 ? 1 : 0} 0 ${x1.toFixed(1)} ${y1.toFixed(1)}`;
+}
+const RING_HP = ellArc(100, 26, 92, 24, 205, -25);
+const RING_STG = ellArc(100, 26, 75, 16, 198, -18);
+
+// 발 밑 잘린 원형 게이지: 바깥 호 = HP (10칸), 그 위(안쪽) 얇은 호 = 흐트러짐 게이지
+function ringSVG(p, stag) {
+  const team = p.id === G.meId ? 'me' : 'foe';
+  const hp = Math.max(0, Math.min(100, (p.hp / RULES.maxHp) * 100));
+  const sg = stag ? 100 : Math.max(0, Math.min(100, (p.stg / RULES.staggerMax) * 100));
+  return `<svg class="ff-ring t-${team}" viewBox="0 0 200 56" preserveAspectRatio="none" aria-hidden="true">
+    <path class="trk" d="${RING_HP}" pathLength="100"/>
+    <path class="hp" d="${RING_HP}" pathLength="100" stroke-dasharray="${hp.toFixed(1)} 100"/>
+    <path class="seg" d="${RING_HP}" pathLength="100"/>
+    <path class="trk s" d="${RING_STG}" pathLength="100"/>
+    <path class="stg${stag ? ' broken' : ''}" d="${RING_STG}" pathLength="100" stroke-dasharray="${sg.toFixed(1)} 100"/>
+  </svg>`;
+}
+const setRingHp = (svg, hp) => { const el = svg && $('.hp', svg); if (el) el.setAttribute('stroke-dasharray', `${Math.max(0, Math.min(100, (hp / RULES.maxHp) * 100)).toFixed(1)} 100`); };
+
+// 캐릭터 발 밑 글자: 빨간 HP 숫자 + 정신력(색으로 상태 표시) / 키워드 아이콘 / 이름
 function footHTML(p, opts = {}) {
   const team = p.id === G.meId ? 'me' : 'foe';
-  const hpPct = Math.max(0, (p.hp / RULES.maxHp) * 100);
-  const stgPct = Math.max(0, (p.stg / RULES.staggerMax) * 100);
   const staggered = opts.stag || (p.status && p.status.staggered && p.status.staggered.cnt > 0);
-  const mood = p.sp >= 15 ? 'up' : p.sp < 0 ? 'neg' : '';
   return `<div class="f-foot t-${team}">
     <div class="ff-row">
       <b class="ff-hpn">${p.hp}</b>
-      <span class="ff-sp ${mood}" title="정신력">${moodFace(p.sp)}<b>${p.sp}</b></span>
+      <span class="ff-sp" style="--spc:${spColor(p.sp)}" title="정신력 ${p.sp}"><b>${p.sp}</b></span>
     </div>
-    <div class="ff-hpbar"><i style="width:${hpPct}%"></i></div>
-    <div class="ff-stg ${staggered ? 'broken' : ''}" title="흐트러짐 ${p.stg}"><i style="width:${stgPct}%"></i></div>
     <div class="f-status">${statusIcons(p, false)}</div>
     <div class="ff-name">${p.name}${staggered ? ' <span class="stag">💢 흐트러짐</span>' : ''}</div>
   </div>`;
@@ -371,12 +390,12 @@ function renderClash(d) {
         <div class="floor"></div>
         <div class="fighter left enter">
           ${skA}
-          <div class="f-fig"><div class="ff-base t-${team(A)}"></div><div class="f-body">${charSVG(A.look, { gear: d.gear, gearColor: attrColor })}</div><div class="f-hit"></div></div>
+          <div class="f-fig"><div class="ff-base t-${team(A)}"></div>${ringSVG(A, false)}<div class="f-body">${charSVG(A.look, { gear: d.gear, gearColor: attrColor })}</div><div class="f-hit"></div></div>
           ${footHTML(A)}
         </div>
         <div class="fighter right enter">
           ${skD}
-          <div class="f-fig"><div class="ff-base t-${team(D)}"></div><div class="f-body flip">${charSVG(D.look, { gear: dGear, gearColor: armorColor })}</div><div class="f-hit"></div></div>
+          <div class="f-fig"><div class="ff-base t-${team(D)}"></div>${ringSVG(D, d.stag)}<div class="f-body flip">${charSVG(D.look, { gear: dGear, gearColor: armorColor })}</div><div class="f-hit"></div></div>
           ${footHTML(D, { stag: d.stag })}
         </div>
         <div class="impact"></div>
@@ -428,8 +447,8 @@ function renderClash(d) {
       totalEl.textContent = v;
       if (d.dmgTo) {
         const hpLeft = Math.max(0, hpWho.hp - v);
-        const bar = $('.ff-hpbar i', hpEl), num = $('.ff-hpn', hpEl);
-        if (bar) bar.style.width = `${(hpLeft / RULES.maxHp) * 100}%`;
+        const num = $('.ff-hpn', hpEl);
+        setRingHp($('.ff-ring', hpEl), hpLeft);
         if (num) { num.textContent = hpLeft; re(num, 'hit'); }
       }
       if (k < 1) requestAnimationFrame(step);
