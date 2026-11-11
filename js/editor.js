@@ -49,6 +49,7 @@ function normalizeCard(c) {
     price: num(c.price, 0, 99, 5),
     count: num(c.count, 1, 5, 1),
     rarity: num(c.rarity, 1, 3, 1),
+    sin: SINS[c.sin] ? c.sin : '',
     img: typeof c.img === 'string' && IMG_RE.test(c.img) && c.img.length < 400000 ? c.img : '',
     effects: (Array.isArray(c.effects) ? c.effects : []).map((e) => normalizeEffect(e)).filter(Boolean).slice(0, 8),
   };
@@ -119,7 +120,7 @@ const packCards = (pack) => (pack ? pack.cards.filter((c) => c.enabled !== false
 function getCustomCards() { return packCards(getActivePack()); }
 
 function templateCard(type, keep = {}) {
-  const base = { name: keep.name || '새 카드', img: keep.img || '', flavor: keep.flavor || '', price: keep.price ?? 5,
+  const base = { name: keep.name || '새 카드', img: keep.img || '', flavor: keep.flavor || '', sin: keep.sin || '', price: keep.price ?? 5,
     count: keep.count ?? 2, rarity: keep.rarity ?? 1, id: keep.id, enabled: keep.enabled !== false };
   const coins3 = () => [0, 1, 2].map(() => ({ power: 2, fx: [] }));
   if (type === 'weapon') return normalizeCard({ ...base, type, attr: 'phys', atk: 8, coins: coins3(), fx: [], effects: [] });
@@ -255,8 +256,11 @@ function renderWorkshop() {
         <select data-f="kind">${[['guard', '🛡 가드 (여러 장 동시)'], ['evade', '💨 회피'], ['counter', '↩ 반격']].map(([k, l]) => `<option value="${k}" ${c.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
       </label>` : ''}
       ${t === 'ego' ? `<label>소모 정신력 <input type="number" data-f="cost" data-num min="0" max="45" value="${c.cost}"></label>` : ''}
-      <label>가격(원) <input type="number" data-f="price" data-num min="0" max="99" value="${c.price}"></label>
+      <label>가격(안) <input type="number" data-f="price" data-num min="0" max="99" value="${c.price}"></label>
       <label>덱 장수 <input type="number" data-f="count" data-num min="1" max="5" value="${c.count}"></label>
+      <label>죄악 (카드 색)
+        <select data-f="sin"><option value="" ${!c.sin ? 'selected' : ''}>자동 (속성에 따라)</option>${Object.entries(SINS).map(([k, v]) => `<option value="${k}" ${c.sin === k ? 'selected' : ''}>● ${v.name}</option>`).join('')}</select>
+      </label>
       <label>등급
         <select data-f="rarity" data-num>${[1, 2, 3].map((r) => `<option value="${r}" ${c.rarity === r ? 'selected' : ''}>${['일반', '희귀', '전설'][r - 1]}</option>`).join('')}</select>
       </label>

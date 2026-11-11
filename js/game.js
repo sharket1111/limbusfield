@@ -37,6 +37,7 @@ const G = {
   defs: {},               // 카드 id → 정의
   sel: { main: null, plus: [], target: null, goods: null },
   humanResolve: null,
+  defendReq: null,
   acting: false,
   hover: null,
 };
@@ -67,7 +68,7 @@ function ensureImgStyle(c) {
   let el = document.getElementById('card-imgs');
   if (!el) { el = document.createElement('style'); el.id = 'card-imgs'; document.head.appendChild(el); }
   el.textContent = [...IMG_RULES].map(([id, img]) =>
-    `.cimg-${id}{background-image:linear-gradient(180deg,rgba(10,8,12,.55),rgba(10,8,12,.15) 40%,rgba(10,8,12,.9) 72%),url("${img}")}`).join('\n');
+    `.cimg-${id}{background-image:linear-gradient(180deg,rgba(10,8,12,0) 55%,rgba(10,8,12,.85) 100%),url("${img}")}`).join('\n');
 }
 function registerDefs(list) {
   for (const c of list) { G.defs[c.id] = c; ensureImgStyle(c); }
@@ -156,7 +157,7 @@ function nightEvent(p) {
     changeSp(p, -5, true);
   } else {
     const [what, amt] = pick(ev.gains);
-    const label = { hp: `HP +${amt}`, sp: `정신력 +${amt}`, won: `+${amt}원` }[what];
+    const label = { hp: `HP +${amt}`, sp: `정신력 +${amt}`, won: `+${amt}안` }[what];
     showEvent(p, ev, `<span class="pos">${label}</span>`);
     log(`${ev.icon} ${pname(p)} 이(가) <b>${ev.name}</b>을(를) 주웠습니다 (${label})`);
     toastTo(p, `${ev.icon} 연료통! ${label}`);
@@ -305,7 +306,7 @@ function gainWon(p, n) {
   const before = p.won;
   p.won = Math.max(0, Math.min(RULES.maxWon, p.won + n));
   const got = p.won - before;
-  if (got > 0) floatText(p, `+${got}원`, 'won');
+  if (got > 0) floatText(p, `+${got}안`, 'won');
   return got;
 }
 
@@ -326,10 +327,10 @@ function pay(payer, receiver, amount) {
     damage(payer, fromHp, '', receiver);
   }
   if (fromWon > 0) {
-    floatText(payer, `-${fromWon}원`, 'spdown');
+    floatText(payer, `-${fromWon}안`, 'spdown');
     gainWon(receiver, fromWon);
   }
-  const parts = [`${fromWon}원`];
+  const parts = [`${fromWon}안`];
   if (fromSp) parts.push(`정신력 ${fromSp}`);
   if (fromHp) parts.push(`<span class="neg">HP ${fromHp}</span>`);
   return parts.join(' + ');
@@ -785,7 +786,7 @@ async function useSupport(p, card, target) {
     log(`${pname(p)} 정신력 ${card.power} 회복`);
   } else if (kind === 'won') {
     gainWon(p, card.power);
-    log(`${pname(p)} ${card.power}원 획득`);
+    log(`${pname(p)} ${card.power}안 획득`);
   } else if (kind === 'cure') {
     cureAll(p);
     floatText(p, '정화', 'heal');
@@ -798,7 +799,7 @@ async function useSupport(p, card, target) {
     if (roll === 0) { heal(p, 25); log('📦 상자 속에는 구급 상자가! HP 25 회복'); }
     else if (roll === 1) { damage(p, 12, '📦 상자가 폭발했다!'); }
     else if (roll === 2) { changeSp(p, 15); log('📦 상자 속에는 진정 향초가! 정신력 15 회복'); }
-    else if (roll === 3) { gainWon(p, 25); log('📦 상자 속에는 현금 다발이! 25원 획득'); }
+    else if (roll === 3) { gainWon(p, 25); log('📦 상자 속에는 현금 다발이! 25안 획득'); }
     else { const n = drawCards(p, 3); log(`📦 상자 속에서 카드 ${n}장 발견!`); }
   } else if (kind === 'steal') {
     if (target.hand.length) {
@@ -856,7 +857,7 @@ async function tradeBuy(p, card, target, decide) {
   }
   const item = pick(target.hand);
   const price = item.price || 0;
-  showStage(p, [item], `${pname(target)}의 카드`, `가격 <b class="won">₩${price}</b>`);
+  showStage(p, [item], `${pname(target)}의 카드`, `가격 <b class="won">${price}안</b>`);
   renderAll();
   await sleep(500);
   const ok = p.won >= price && (await decide(item)) === true;
@@ -868,7 +869,7 @@ async function tradeBuy(p, card, target, decide) {
   target.hand.splice(target.hand.indexOf(item), 1);
   giveCard(p, item);
   log(`🛒 ${pname(p)} 이(가) ${pname(target)}에게서 ${cname(item)}을(를) 매입 (${paid})`);
-  toastTo(target, `「${item.name}」을(를) ₩${price}에 매입당했습니다`, 'bad');
+  toastTo(target, `「${item.name}」을(를) ${price}안에 매입당했습니다`, 'bad');
   renderAll();
   await sleep(600);
 }
@@ -878,14 +879,14 @@ async function tradeSell(p, card, goods, target) {
   discardCard(p, card);
   p.hand.splice(p.hand.indexOf(goods), 1);
   const price = goods.price || 0;
-  showStage(p, [card, goods], pname(target), `판매가 <b class="won">₩${price}</b> — 거부할 수 없음`);
-  log(`💸 ${pname(p)} 이(가) ${pname(target)}에게 ${cname(goods)}을(를) ₩${price}에 강매`);
+  showStage(p, [card, goods], pname(target), `판매가 <b class="won">${price}안</b> — 거부할 수 없음`);
+  log(`💸 ${pname(p)} 이(가) ${pname(target)}에게 ${cname(goods)}을(를) ${price}안에 강매`);
   renderAll();
   await sleep(700);
   const paid = pay(target, p, price);
   if (target.alive) giveCard(target, goods); else toDiscard(target, goods);
   log(`${pname(target)} 지불: ${paid}`);
-  toastTo(target, `「${goods.name}」을(를) ₩${price}에 강매당했습니다`, 'bad');
+  toastTo(target, `「${goods.name}」을(를) ${price}안에 강매당했습니다`, 'bad');
   renderAll();
   await sleep(600);
 }
@@ -909,16 +910,16 @@ function validExchange(p, plan) {
 async function tradeExchange(p, card, plan) {
   if (!validExchange(p, plan)) return false;
   discardCard(p, card);
-  const before = `HP ${p.hp} / SP ${p.sp} / ₩${p.won}`;
+  const before = `HP ${p.hp} / SP ${p.sp} / ${p.won}안`;
   const dhp = plan.hp - p.hp, dsp = plan.sp - p.sp, dwon = plan.won - p.won;
   p.hp = plan.hp;
   p.sp = plan.sp;
   p.won = plan.won;
-  showStage(p, [card], pname(p), `${before} → <b>HP ${p.hp} / SP ${p.sp} / ₩${p.won}</b>`);
-  log(`💱 ${pname(p)} 환전: ${before} → HP ${p.hp} / SP ${p.sp} / ₩${p.won}`);
+  showStage(p, [card], pname(p), `${before} → <b>HP ${p.hp} / SP ${p.sp} / ${p.won}안</b>`);
+  log(`💱 ${pname(p)} 환전: ${before} → HP ${p.hp} / SP ${p.sp} / ${p.won}안`);
   if (dhp) floatText(p, (dhp > 0 ? '+' : '') + dhp, dhp > 0 ? 'heal' : 'dmg');
   else if (dsp) floatText(p, (dsp > 0 ? '+' : '') + dsp + ' SP', dsp > 0 ? 'sp' : 'spdown');
-  else if (dwon) floatText(p, (dwon > 0 ? '+' : '') + dwon + '원', 'won');
+  else if (dwon) floatText(p, (dwon > 0 ? '+' : '') + dwon + '안', 'won');
   renderAll();
   await sleep(700);
   return true;
@@ -1134,6 +1135,7 @@ function startMatch(cfg) {
   G.over = false;
   G.acting = false;
   G.humanResolve = null;
+  G.defendReq = null;
   G.hover = null;
   G.sel = { main: null, plus: [], target: null, goods: null };
   G.defs = {};

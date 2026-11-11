@@ -200,12 +200,12 @@ function effectText(e, armor = false) {
   else if (e.key === 'dmg') body = `${who}에게 ${e.pot || 0} 고정 피해`;
   else if (e.key === 'heal') body = `${who} HP +${e.pot || 0}`;
   else if (e.key === 'sp') body = `${who} 정신력 ${(e.pot || 0) >= 0 ? '+' : ''}${e.pot || 0}`;
-  else if (e.key === 'won') body = `${who} +${e.pot || 0}원`;
+  else if (e.key === 'won') body = `${who} +${e.pot || 0}안`;
   else if (e.key === 'draw') body = `${who} 카드 ${e.pot || 0}장`;
   else if (e.key === 'cure') body = `${who} 상태 이상 해제`;
   else if (e.key === 'kwBurst') body = `${who}의 ${kwName(e.kw)} 폭발 (위력만큼 ${e.kw === 'tremor' ? '흐트러짐 ' : ''}피해, 횟수 -1)`;
   else if (e.key === 'breakArmor') body = `${who}의 방어구 1장 파괴`;
-  else if (e.key === 'stealWon') body = `${who}의 돈 ${e.pot || 0}원 빼앗기`;
+  else if (e.key === 'stealWon') body = `${who}의 돈 ${e.pot || 0}안 빼앗기`;
   return `[${when}] ${body}`;
 }
 
@@ -251,7 +251,7 @@ function applyEffect(e, src, enemy) {
       if (!n) break;
       t.won -= n;
       gainWon(src, n);
-      log(`${pname(src)} 이(가) ${pname(t)}의 돈 ${n}원을 빼앗았습니다`);
+      log(`${pname(src)} 이(가) ${pname(t)}의 돈 ${n}안을 빼앗았습니다`);
       break;
     }
     default: break;

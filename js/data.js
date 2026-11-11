@@ -4,7 +4,7 @@
 //  type   : weapon(무기) | armor(방어구) | ego(E.G.O) | item(도구) | trade(거래)
 //  attr   : phys(물리) | fire(화염) | frost(냉기) | light(광휘) | shadow(그림자) | all(모든 속성 — 방어구 전용)
 //  count  : 덱에 들어가는 장수
-//  price  : 가격(원). 매입/매각할 때 이 값으로 거래됩니다. E.G.O는 모두 0원
+//  price  : 가격(안). 매입/매각할 때 이 값으로 거래됩니다. E.G.O는 모두 0안
 //  rarity : 1 일반 / 2 희귀 / 3 전설 (테두리 색만 다름)
 //
 //  weapon : atk, plus(보조 무기 — 다른 무기에 덧붙일 수 있음), fx(특수효과)
@@ -231,3 +231,30 @@ const RULES = {
 
 const CPU_NAMES = ['해결사 K', '수습사원 R', '배달부 J', '중개인 M', '사서 Q', '경비원 T', '연구원 V'];
 const CPU_AVATARS = ['🦊', '🐺', '🦉', '🐍', '🦇', '🐈‍⬛', '🕷'];
+
+// ---------------- 죄악 (카드 색) ----------------
+// 카드마다 sin 값을 줄 수 있고(카드 공방에서 선택), 없으면 아래 규칙으로 자동 지정
+const SINS = {
+  wrath:    { name: '분노', color: '#d8342b' },
+  lust:     { name: '색욕', color: '#e8731c' },
+  sloth:    { name: '나태', color: '#e3b21d' },
+  gluttony: { name: '탐식', color: '#86b82a' },
+  gloom:    { name: '우울', color: '#2a9fc4' },
+  pride:    { name: '오만', color: '#2f55c2' },
+  envy:     { name: '질투', color: '#8a3dbf' },
+};
+const SIN_BY_ATTR = { phys: 'pride', fire: 'wrath', frost: 'gloom', light: 'sloth', shadow: 'envy', all: 'lust' };
+const SIN_OVERRIDE = {
+  w_cutter: 'sloth', w_saw: 'gluttony', w_shredder: 'gluttony', w_crowbar: 'gluttony', w_needle: 'lust', w_vine: 'lust',
+  w_baton: 'lust', w_dagger: 'gloom', w_shears: 'wrath', w_notice: 'wrath', w_plate: 'sloth', w_tray: 'sloth',
+  a_umbrella: 'gloom', a_badge: 'sloth', d_step: 'gloom', d_parry: 'wrath', d_mist: 'gloom',
+  e_mend: 'gluttony', e_purify: 'sloth', e_steal: 'envy', e_stun: 'gloom',
+};
+function sinOf(c) {
+  if (c.sin && SINS[c.sin]) return c.sin;
+  const base = String(c.id || '').replace(/^p\d+_/, '');
+  if (SIN_OVERRIDE[base]) return SIN_OVERRIDE[base];
+  if (c.type === 'item') return 'gluttony';
+  if (c.type === 'trade') return c.kind === 'exchange' ? 'sloth' : 'envy';
+  return SIN_BY_ATTR[c.attr] || 'pride';
+}
