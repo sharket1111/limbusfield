@@ -393,8 +393,8 @@ const RING_STG = ellArc(100, 26, 75, 16, 198, -18);
 // 발 밑 잘린 원형 게이지: 바깥 호 = HP (10칸), 그 위(안쪽) 얇은 호 = 흐트러짐 게이지
 function ringSVG(p, stag) {
   const team = p.id === G.meId ? 'me' : 'foe';
-  const hp = Math.max(0, Math.min(100, (p.hp / RULES.maxHp) * 100));
-  const sg = stag ? 100 : Math.max(0, Math.min(100, (p.stg / RULES.staggerMax) * 100));
+  const hp = Math.max(0, Math.min(100, (p.hp / (p.maxHp || RULES.maxHp)) * 100));
+  const sg = stag ? 100 : Math.max(0, Math.min(100, (p.stg / (p.stgMax || RULES.staggerMax)) * 100));
   return `<svg class="ff-ring t-${team}" viewBox="0 0 200 56" preserveAspectRatio="none" aria-hidden="true">
     <path class="trk" d="${RING_HP}" pathLength="100"/>
     <path class="hp" d="${RING_HP}" pathLength="100" stroke-dasharray="${hp.toFixed(1)} 100"/>
@@ -403,7 +403,7 @@ function ringSVG(p, stag) {
     <path class="stg${stag ? ' broken' : ''}" d="${RING_STG}" pathLength="100" stroke-dasharray="${sg.toFixed(1)} 100"/>
   </svg>`;
 }
-const setRingHp = (svg, hp) => { const el = svg && $('.hp', svg); if (el) el.setAttribute('stroke-dasharray', `${Math.max(0, Math.min(100, (hp / RULES.maxHp) * 100)).toFixed(1)} 100`); };
+const setRingHp = (svg, hp, max = RULES.maxHp) => { const el = svg && $('.hp', svg); if (el) el.setAttribute('stroke-dasharray', `${Math.max(0, Math.min(100, (hp / max) * 100)).toFixed(1)} 100`); };
 
 // 캐릭터 발 밑 글자: 빨간 HP 숫자 + 정신력(색으로 상태 표시) / 키워드 아이콘 / 이름
 function footHTML(p, opts = {}) {
@@ -565,7 +565,7 @@ function renderClash(d) {
       if (d.dmgTo) {
         const hpLeft = Math.max(0, hpWho.hp - v);
         const num = $('.ff-hpn', hpEl);
-        setRingHp($('.ff-ring', hpEl), hpLeft);
+        setRingHp($('.ff-ring', hpEl), hpLeft, hpWho.maxHp || RULES.maxHp);
         if (num) { num.textContent = hpLeft; re(num, 'hit'); }
       }
       if (k < 1) requestAnimationFrame(step);

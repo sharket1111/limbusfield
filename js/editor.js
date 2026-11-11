@@ -32,7 +32,12 @@ function normalizeEffect(e, coin = false) {
     pot: num(e.pot, d.signed ? -45 : 0, 99),
     cnt: num(e.cnt, 0, 99),
   };
-  if (d.kwSel) out.kw = KW_SEL[d.kwSel].includes(e.kw) ? e.kw : KW_SEL[d.kwSel][0];
+  if (d.kwSel) {
+    // 기본 키워드 목록 또는 나만의 키워드 id
+    const list = d.kwSel === 'custom' ? [] : KW_SEL[d.kwSel];
+    out.kw = list.includes(e.kw) || KW_ID_RE.test(e.kw || '') ? e.kw : list[0];
+    if (!out.kw) return null;
+  }
   if (e.key === 'reuse') out.cnt = num(e.cnt, 1, 5, 1);
   return out;
 }
@@ -64,7 +69,10 @@ function normalizeCard(c) {
   const allowFx = { weapon: ['all', 'pierce', 'twice', 'lifesteal'], ego: ['all', 'pierce'], armor: ['reflect'], item: [] }[c.type];
   out.fx = (Array.isArray(c.fx) ? c.fx : []).filter((f) => allowFx.includes(f));
   if (c.type === 'weapon') { out.atk = num(c.atk, 0, 60, 8); out.plus = !!c.plus; }
-  if (c.type === 'weapon' || c.type === 'ego') out.weight = num(c.weight, 1, 5, 1);
+  if (c.type === 'weapon' || c.type === 'ego') {
+    out.weight = num(c.weight, 1, 5, 1);
+    out.dtype = DTYPES[c.dtype] ? c.dtype : 'slash';
+  }
   if (c.type === 'armor') { out.def = num(c.def, 0, 60, 8); out.kind = ['guard', 'evade', 'counter'].includes(c.kind) ? c.kind : 'guard'; }
   if (c.type === 'ego') { out.kind = 'attack'; out.power = num(c.power, 0, 60, 10); out.cost = num(c.cost, 0, 45, 10); }
   if (c.type === 'item') out.kind = 'custom';
@@ -77,6 +85,8 @@ function normalizePack(pk) {
     id: /^p_[a-z0-9_]+$/i.test(pk.id || '') ? pk.id : newId('p'),
     name: cleanText(pk.name, 20) || '카드팩',
     cards: (Array.isArray(pk.cards) ? pk.cards : []).map(normalizeCard).filter(Boolean).slice(0, 60),
+    sheet: normalizeSheet(pk.sheet),
+    keywords: (Array.isArray(pk.keywords) ? pk.keywords : []).map(normalizeKeyword).filter(Boolean).slice(0, RULES.maxKeywords),
   };
 }
 
@@ -207,23 +217,39 @@ function effectRow(e, path, ctx) {
     ${pre ? '<span class="eff-fixed">던지기 전</span>' : `<select data-f="${path}.when">${whens.map((w) => `<option value="${w}" ${e.when === w ? 'selected' : ''}>${W[w]}</option>`).join('')}</select>`}
     ${pre ? '' : `<select data-f="${path}.target"><option value="enemy" ${e.target === 'enemy' ? 'selected' : ''}>${armor ? '공격자' : '상대'}</option><option value="self" ${e.target === 'self' ? 'selected' : ''}>자신</option></select>`}
     <select data-f="${path}.key">${keyOptions}</select>
-    ${d.kwSel ? `<select data-f="${path}.kw">${KW_SEL[d.kwSel].map((k) => `<option value="${k}" ${e.kw === k ? 'selected' : ''}>${kwPlain(k)}</option>`).join('')}</select>` : ''}
+    ${d.kwSel ? kwSelect(d.kwSel, e.kw, `data-f="${path}.kw"`) : ''}
     ${d.pot ? `<label>${d.potLabel || '위력'} <input type="number" data-f="${path}.pot" data-num value="${e.pot}" min="${d.signed ? -45 : 0}" max="99"></label>` : ''}
     ${d.cnt ? `<label>${d.cntLabel || '횟수'} <input type="number" data-f="${path}.cnt" data-num value="${e.cnt}" min="0" max="99"></label>` : ''}
     <button class="btn small del" data-act="del" data-path="${path}" title="삭제">✕</button>
   </div>`;
 }
 
+// 키워드 선택 상자: 기본 키워드 + 지금 팩의 나만의 키워드
+function kwChoices(sel) {
+  const mine = (edPack() ? edPack().keywords : []).map((k) => k.id);
+  return sel === 'custom' ? mine : [...KW_SEL[sel], ...mine];
+}
+function kwSelect(sel, cur, attrs) {
+  const list = kwChoices(sel);
+  if (!list.length) return '<span class="muted small">먼저 「✴ 나만의 키워드」를 만드세요</span>';
+  return `<select ${attrs}>${list.map((k) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${kwPlain(k)}</option>`).join('')}</select>`;
+}
+
 function packInfoHTML(pack) {
-  const s = packSummary(packCards(pack));
-  return `<b>${pack.name}</b> — 코스트 <b class="${s.overBudget ? 'neg' : 'pos'}">${s.cost}</b> / ${RULES.packBudget}
+  previewKeywords(pack.keywords);
+  const s = packSummary(packCards(pack), pack.keywords);
+  const kwCost = pack.keywords.reduce((t, k) => t + keywordCost(k), 0);
+  const sh = sheetSummary(pack.sheet);
+  return `<b>${pack.name}</b> — 코스트 <b class="${s.overBudget ? 'neg' : 'pos'}">${s.cost}</b> / ${RULES.packBudget}${kwCost ? ` <span class="muted">(키워드 ${kwCost} 포함)</span>` : ''}
     · <b class="${s.tooSmall ? 'neg' : 'pos'}">${s.count}장</b> (개인 덱 최소 ${RULES.packMin})
-    · ${s.valid ? '<span class="pos">✔ 대전 규격</span>' : `<span class="neg">✖ ${s.overBudget ? '코스트 초과' : '장수 부족'}</span>`}`;
+    · 스탯 <b class="${sh.valid ? 'pos' : 'neg'}">${sh.points}</b> / ${sh.budget}
+    · ${s.valid && sh.valid ? '<span class="pos">✔ 대전 규격</span>' : `<span class="neg">✖ ${!sh.valid ? '스탯 포인트 초과' : s.overBudget ? '코스트 초과' : '장수 부족'}</span>`}`;
 }
 
 function renderWorkshop() {
   const c = ED.cur;
   const pack = edPack();
+  previewKeywords(pack.keywords);
   // 팩 선택줄
   $('#ws-pack').innerHTML = ED.packs.map((p) => `<option value="${p.id}" ${p.id === pack.id ? 'selected' : ''}>${p.name} (${p.cards.length}종)</option>`).join('');
   $('#ws-pack-info').innerHTML = packInfoHTML(pack);
@@ -238,8 +264,8 @@ function renderWorkshop() {
 
   const t = c.type;
   const attrs = t === 'armor' ? Object.keys(ATTR) : Object.keys(ATTR).filter((k) => k !== 'all');
-  const fxOpts = { weapon: [['all', '전체 공격'], ['pierce', '관통 (방어 무시)'], ['twice', '2회 공격'], ['lifesteal', '흡혈']],
-    ego: [['all', '전체 공격'], ['pierce', '관통 (방어 무시)']], armor: c.kind === 'guard' ? [['reflect', '반사 (막아낸 피해의 절반 반사)']] : [], item: [] }[t];
+  const fxOpts = { weapon: [['all', '전체 공격'], ['pierce', '방어 무시 (가드 불가)'], ['twice', '2회 공격'], ['lifesteal', '흡혈']],
+    ego: [['all', '전체 공격'], ['pierce', '방어 무시 (가드 불가)']], armor: c.kind === 'guard' ? [['reflect', '반사 (막아낸 피해의 절반 반사)']] : [], item: [] }[t];
   const statLabel = { weapon: '공격력', armor: '수비 위력', ego: '위력' }[t];
   const statKey = { weapon: 'atk', armor: 'def', ego: 'power' }[t];
 
@@ -249,7 +275,7 @@ function renderWorkshop() {
       <label>종류
         <select data-f="type">${TYPES.map((x) => `<option value="${x}" ${t === x ? 'selected' : ''}>${TYPE_NAME[x]}</option>`).join('')}</select>
       </label>
-      ${t !== 'item' ? `<label>속성
+      ${t !== 'item' ? `<label>속성 (색·아이콘)
         <select data-f="attr">${attrs.map((k) => `<option value="${k}" ${c.attr === k ? 'selected' : ''}>${ATTR[k].icon} ${ATTR[k].name}</option>`).join('')}</select>
       </label>` : ''}
       ${statKey ? `<label>${statLabel} <input type="number" data-f="${statKey}" data-num min="0" max="60" value="${c[statKey]}"></label>` : ''}
@@ -257,6 +283,8 @@ function renderWorkshop() {
         <select data-f="kind">${[['guard', '🛡 가드 (여러 장 동시)'], ['evade', '💨 회피'], ['counter', '↩ 반격']].map(([k, l]) => `<option value="${k}" ${c.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
       </label>` : ''}
       ${t === 'ego' ? `<label>소모 정신력 <input type="number" data-f="cost" data-num min="0" max="45" value="${c.cost}"></label>` : ''}
+      ${t === 'weapon' || t === 'ego' ? `<label>공격 유형
+        <select data-f="dtype">${Object.entries(DTYPES).map(([k, v]) => `<option value="${k}" ${dtypeOf(c) === k ? 'selected' : ''}>${v.icon} ${v.name}</option>`).join('')}</select></label>` : ''}
       ${t === 'weapon' || t === 'ego' ? `<label title="한 번에 맞는 사람 수. 고른 대상 + 나머지 상대 중 무작위">공격 가중치 (맞는 사람 수)
         <input type="number" data-f="weight" data-num min="1" max="5" value="${c.weight || 1}" ${c.fx.includes('all') ? 'disabled' : ''}></label>` : ''}
       <label>가격(안) <input type="number" data-f="price" data-num min="0" max="99" value="${c.price}"></label>
@@ -337,7 +365,7 @@ function wsSave() {
 }
 
 function exportPack(pack) {
-  const data = { format: 'anomaly-field-pack', version: 1, name: pack.name, cards: pack.cards };
+  const data = { format: 'anomaly-field-pack', version: 2, name: pack.name, cards: pack.cards, sheet: pack.sheet, keywords: pack.keywords };
   const blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -347,6 +375,7 @@ function exportPack(pack) {
 }
 
 function initWorkshop() {
+  initPackExtras();
   $('#btn-workshop').onclick = openWorkshop;
   $('#ws-back').onclick = closeWorkshop;
 
@@ -416,14 +445,14 @@ function initWorkshop() {
       const data = JSON.parse(await f.text());
       // 새 형식 { name, cards } 또는 예전 형식 [카드...]
       const raw = Array.isArray(data) ? { name: f.name.replace(/\.json$/i, ''), cards: data } : data;
-      const pk = normalizePack({ name: raw.name, cards: raw.cards });
-      if (!pk.cards.length) { toast('불러올 카드가 없습니다', 'bad'); return; }
+      const pk = normalizePack({ name: raw.name, cards: raw.cards, sheet: raw.sheet, keywords: raw.keywords });
+      if (!pk.cards.length && !pk.keywords.length) { toast('불러올 카드가 없습니다', 'bad'); return; }
       pk.id = newId('p');
       pk.cards = pk.cards.map((x) => ({ ...x, id: newId('c') }));
       ED.packs.push(pk);
       ED.packId = pk.id;
       if (!commitPacks()) { ED.packs.pop(); return; }
-      ED.cur = JSON.parse(JSON.stringify(pk.cards[0]));
+      ED.cur = pk.cards[0] ? JSON.parse(JSON.stringify(pk.cards[0])) : templateCard('weapon');
       toast(`카드팩 「${pk.name}」 (${pk.cards.length}종)을 불러왔습니다`);
       renderWorkshop();
     } catch {
@@ -496,7 +525,7 @@ function initWorkshop() {
           e.pot = { chargeBoost: 4, reuse: 0 }[e.key] ?? 3;
           e.cnt = { chargeBoost: 3, pwrHighSp: 20, reuse: 1 }[e.key] ?? 0;
         } else if (e.when === 'use' && /^coins/.test(el.dataset.f)) e.when = 'hit';
-        if (d.kwSel && !KW_SEL[d.kwSel].includes(e.kw)) e.kw = KW_SEL[d.kwSel][0];
+        if (d.kwSel && !kwChoices(d.kwSel).includes(e.kw)) e.kw = kwChoices(d.kwSel)[0];
         if (!d.pot) e.pot = 0;
         if (!d.cnt) e.cnt = 0;
         if (d.pot && !e.pot) e.pot = 2;
@@ -532,6 +561,164 @@ function initWorkshop() {
     }
     renderWorkshop();
   });
+}
+
+// ------------------------------------------------------------
+//  캐릭터 스탯 / 나만의 키워드 편집 창 (지금 공방에서 고른 팩)
+// ------------------------------------------------------------
+// 효과 한 줄 (패시브·키워드 특수 효과용): 대상 / 효과 / 키워드 / 위력 / 횟수
+function fxRow(e, path, dataAttr, selfLabel = '자신', enemyLabel = '상대') {
+  const keys = Object.keys(EFFECT_DEFS).filter((k) => !EFFECT_DEFS[k].coinOnly && !EFFECT_DEFS[k].preRoll);
+  const d = EFFECT_DEFS[e.key];
+  return `<div class="eff-row">
+    <select ${dataAttr}="${path}.target"><option value="enemy" ${e.target === 'enemy' ? 'selected' : ''}>${enemyLabel}</option><option value="self" ${e.target === 'self' ? 'selected' : ''}>${selfLabel}</option></select>
+    <select ${dataAttr}="${path}.key">${keys.map((k) => `<option value="${k}" ${e.key === k ? 'selected' : ''}>${EFFECT_DEFS[k].label}</option>`).join('')}</select>
+    ${d.kwSel ? kwSelect(d.kwSel, e.kw, `${dataAttr}="${path}.kw"`) : ''}
+    ${d.pot ? `<label>${d.potLabel || '위력'} <input type="number" ${dataAttr}="${path}.pot" data-num value="${e.pot}" min="${d.signed ? -45 : 0}" max="99"></label>` : ''}
+    ${d.cnt ? `<label>${d.cntLabel || '횟수'} <input type="number" ${dataAttr}="${path}.cnt" data-num value="${e.cnt}" min="0" max="99"></label>` : ''}
+    <button class="btn small del" data-del="${path}" title="삭제">✕</button>
+  </div>`;
+}
+const newFx = () => ({ when: 'use', target: 'self', key: 'poise', pot: 2, cnt: 2 });
+// 효과 종류를 바꿨을 때 기본값 정리
+function fixFx(e) {
+  const d = EFFECT_DEFS[e.key];
+  if (!d) return;
+  if (d.kwSel && !kwChoices(d.kwSel).includes(e.kw)) e.kw = kwChoices(d.kwSel)[0];
+  if (!d.pot) e.pot = 0; else if (!e.pot) e.pot = 2;
+  if (!d.cnt) e.cnt = 0; else if (!e.cnt) e.cnt = 2;
+}
+
+function renderSheet() {
+  const pk = edPack();
+  pk.sheet = normalizeSheet(pk.sheet);
+  const sh = pk.sheet, sum = sheetSummary(sh);
+  const stepRow = (k) => {
+    const [lo, hi, step, def] = SHEET_RANGE[k];
+    const pts = (sh[k] - def) / step;
+    return `<div class="sh-row"><span class="sh-label">${SHEET_LABEL[k]}</span>
+      <input type="range" min="${lo}" max="${hi}" step="${step}" value="${sh[k]}" data-sh="${k}" data-num>
+      <b class="sh-val">${sh[k]}</b><span class="sh-pts ${pts > 0 ? 'neg' : pts < 0 ? 'pos' : ''}">${pts > 0 ? '-' : pts < 0 ? '+' : ''}${Math.abs(pts)}P</span></div>`;
+  };
+  $('#sheet-pack').textContent = `— ${pk.name}`;
+  $('#sheet-body').innerHTML = `
+    <div class="sh-sum ${sum.valid ? '' : 'over'}">스탯 포인트 <b>${sum.points}</b> / ${sum.budget}
+      <span class="muted small">기본값에서 올리면 포인트를 쓰고, 내리면 돌려받습니다. 상한을 넘으면 대전에 쓸 수 없습니다.</span></div>
+    <h3>기본 능력치</h3>
+    ${stepRow('hp')}${stepRow('sp')}${stepRow('stg')}
+    <h3>내성 <span class="muted small">받는 피해 배율 — 공격 유형마다</span></h3>
+    ${Object.entries(DTYPES).map(([d, v]) => {
+      const cur = sh.res[d];
+      return `<div class="sh-row"><span class="sh-label">${v.icon} ${v.name} 내성</span>
+        <select data-sh="res.${d}" data-num>${RES_LEVELS.map(([m, nm, p]) => `<option value="${m}" ${cur === m ? 'selected' : ''}>${nm} ×${m} (${p > 0 ? '-' : p < 0 ? '+' : '±'}${Math.abs(p)}P)</option>`).join('')}</select></div>`;
+    }).join('')}
+    <h3>패시브 <span class="muted small">조건이 되면 자동으로 발동 (최대 ${RULES.maxPassives}개)</span></h3>
+    ${sh.passives.map((ps, i) => `<div class="sh-passive">
+        <select data-sh="passives.${i}.on">${Object.entries(PASSIVE_ON).map(([k, l]) => `<option value="${k}" ${ps.on === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        ${fxRow(ps.e, `passives.${i}.e`, 'data-sh').replace(`data-del="passives.${i}.e"`, `data-del="passives.${i}"`)}
+        <span class="sh-pts neg">-${passiveCost(ps)}P</span>
+      </div>`).join('') || '<p class="muted small">패시브 없음</p>'}
+    ${sh.passives.length < RULES.maxPassives ? '<button class="btn small" data-add="passive">+ 패시브 추가</button>' : ''}`;
+}
+
+function renderKwm() {
+  const pk = edPack();
+  previewKeywords(pk.keywords);
+  const total = pk.keywords.reduce((s, k) => s + keywordCost(k), 0);
+  $('#kwm-body').innerHTML = `
+    <p class="muted small">기본 키워드를 바탕으로 이름·색을 바꾸고, <b>발동할 때마다</b> 함께 나가는 특수 효과를 넣습니다.
+      만든 키워드는 이 팩의 카드 효과(「나만의 키워드 부여」)와 패시브에서 쓸 수 있고, 만드는 코스트가 팩 코스트에 더해집니다.
+      지금 합계 <b>${total}</b> (최대 ${RULES.maxKeywords}개)</p>
+    ${pk.keywords.map((k, i) => `<div class="kwm-box">
+      <div class="kwm-head">
+        <span class="kwm-icon">${kwIconHTML(k.base, k.hue)}</span>
+        <input data-kw="${i}.name" maxlength="8" value="${k.name}">
+        <label>기반 <select data-kw="${i}.base">${KW_BASES.map((b) => `<option value="${b}" ${k.base === b ? 'selected' : ''}>${KEYWORDS[b].emoji} ${KEYWORDS[b].name}</option>`).join('')}</select></label>
+        <label class="kwm-hue">색 <input type="range" min="0" max="359" value="${k.hue}" data-kw="${i}.hue" data-num></label>
+        <span class="cost-tag">코스트 ${keywordCost(k)}</span>
+        <button class="btn small del" data-delkw="${i}">키워드 삭제</button>
+      </div>
+      <div class="muted small">${KEYWORDS[k.base].name}처럼 동작: ${KEYWORDS[k.base].desc}</div>
+      <div class="kwm-fx">${k.fx.map((e, j) => fxRow(e, `${i}.fx.${j}`, 'data-kw', '보유자', '상대')).join('') || '<span class="muted small">특수 효과 없음</span>'}</div>
+      ${k.fx.length < 3 ? `<button class="btn small" data-addfx="${i}">+ 발동 시 특수 효과</button>` : ''}
+    </div>`).join('') || '<p class="muted">아직 만든 키워드가 없습니다.</p>'}`;
+  $('#kwm-add').disabled = pk.keywords.length >= RULES.maxKeywords;
+}
+
+function initPackExtras() {
+  const sheetM = $('#sheet-modal'), kwM = $('#kw-modal');
+  const save = () => { commitPacks(); renderWorkshop(); };
+  $('#ws-sheet').onclick = () => { renderSheet(); sheetM.classList.add('show'); };
+  $('#ws-kw').onclick = () => { renderKwm(); kwM.classList.add('show'); };
+  $('#sheet-close').onclick = () => { save(); sheetM.classList.remove('show'); };
+  $('#kwm-close').onclick = () => { save(); kwM.classList.remove('show'); };
+  $('#sheet-reset').onclick = () => { edPack().sheet = defaultSheet(); renderSheet(); };
+
+  // 스탯
+  const body = $('#sheet-body');
+  const onSheet = (el, rerender) => {
+    const path = el.dataset.sh;
+    if (!path) return;
+    const sh = edPack().sheet;
+    setPath(sh, path, el.dataset.num !== undefined ? Number(el.value) : el.value);
+    if (/\.key$/.test(path)) fixFx(getPath(sh, path.replace(/\.key$/, '')));
+    edPack().sheet = normalizeSheet(sh);
+    if (rerender) renderSheet();
+  };
+  body.addEventListener('change', (e) => onSheet(e.target, true));
+  body.addEventListener('input', (e) => {
+    if (e.target.type !== 'range') return;
+    onSheet(e.target, false);
+    const row = e.target.closest('.sh-row');
+    if (row) $('.sh-val', row).textContent = e.target.value;
+    const sum = sheetSummary(edPack().sheet);
+    const box = $('.sh-sum', body);
+    box.classList.toggle('over', !sum.valid);
+    $('b', box).textContent = sum.points;
+  });
+  body.addEventListener('click', (e) => {
+    const sh = edPack().sheet;
+    if (e.target.dataset.add === 'passive' && sh.passives.length < RULES.maxPassives) sh.passives.push({ on: 'turnStart', e: newFx() });
+    else if (e.target.dataset.del) { const m = e.target.dataset.del.match(/^passives\.(\d+)/); if (m) sh.passives.splice(+m[1], 1); }
+    else return;
+    renderSheet();
+  });
+
+  // 나만의 키워드
+  const kb = $('#kwm-body');
+  const onKw = (el, rerender) => {
+    const path = el.dataset.kw;
+    if (!path) return;
+    const list = edPack().keywords;
+    setPath(list, path, el.dataset.num !== undefined ? Number(el.value) : el.value);
+    if (/\.key$/.test(path)) fixFx(getPath(list, path.replace(/\.key$/, '')));
+    edPack().keywords = list.map(normalizeKeyword).filter(Boolean);
+    if (rerender) renderKwm();
+  };
+  kb.addEventListener('change', (e) => onKw(e.target, true));
+  kb.addEventListener('input', (e) => {
+    if (e.target.type === 'range') { onKw(e.target, false); const ic = e.target.closest('.kwm-box'); if (ic) $('.kwm-icon', ic).innerHTML = kwIconHTML(getPath(edPack().keywords, e.target.dataset.kw.replace(/\.hue$/, '')).base, +e.target.value); }
+    else if (e.target.dataset.kw && /\.name$/.test(e.target.dataset.kw)) onKw(e.target, false);
+  });
+  kb.addEventListener('click', (e) => {
+    const list = edPack().keywords;
+    const t = e.target.dataset;
+    if (t.addfx !== undefined) { const k = list[+t.addfx]; if (k && k.fx.length < 3) k.fx.push({ ...newFx(), key: 'sp', target: 'enemy', pot: -3 }); }
+    else if (t.delkw !== undefined) {
+      const k = list[+t.delkw];
+      if (!k || !confirm(`「${k.name}」 키워드를 지울까요? 이 키워드를 쓰는 카드 효과는 동작하지 않게 됩니다.`)) return;
+      list.splice(+t.delkw, 1);
+    } else if (t.del) { const m = t.del.match(/^(\d+)\.fx\.(\d+)$/); if (m) list[+m[1]].fx.splice(+m[2], 1); }
+    else return;
+    edPack().keywords = list.map(normalizeKeyword).filter(Boolean);
+    renderKwm();
+  });
+  $('#kwm-add').onclick = () => {
+    const pk = edPack();
+    if (pk.keywords.length >= RULES.maxKeywords) return;
+    pk.keywords.push(normalizeKeyword({ name: '새 키워드', base: 'bleed', hue: 200, fx: [] }));
+    renderKwm();
+  };
 }
 
 // 타이틀 / 멀티 로비의 팩 선택 상자 채우기

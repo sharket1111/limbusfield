@@ -35,6 +35,14 @@ function effectValue(e) {
       case 'pwrLowHp': v = pot * 0.2; break;
       case 'reuse': v = Math.max(1, cnt) * 1.2; break;
       case 'kwBurst': v = toEnemy ? 4 : -4; break;
+      case 'customKw': {
+        const ck = KEYWORDS[e.kw];
+        const base = ck && ck.base ? ck.base : 'burn';
+        const extra = ck && ck.fx ? ck.fx.reduce((s, x) => s + Math.abs(effectValue({ ...x, when: 'use' })), 0) : 0;
+        v = Math.min(36, pot * Math.max(1, cnt) * (KW_WEIGHT[base] || 0.4) + Math.max(1, cnt) * extra * 0.5);
+        v = (ck ? ck.debuff : true) === toEnemy ? v : -v;
+        break;
+      }
       case 'breakArmor': v = toEnemy ? 6 : -6; break;
       case 'stealWon': v = toEnemy ? pot * 0.4 : 0; break;
       default: v = 0;
@@ -93,9 +101,12 @@ function cardCost(c) {
 }
 
 // 팩 요약: 총 코스트, 장수, 대전 가능 여부
-function packSummary(cards) {
+// keywords: 팩의 나만의 키워드 — 만드는 데 드는 코스트도 팩 코스트에 포함
+function packSummary(cards, keywords = []) {
   const list = cards || [];
-  const cost = list.reduce((s, c) => s + cardCost(c) * (c.count || 1), 0);
+  if (keywords.length) previewKeywords(keywords);
+  const kwCost = keywords.reduce((s, k) => s + keywordCost(k), 0);
+  const cost = list.reduce((s, c) => s + cardCost(c) * (c.count || 1), 0) + kwCost;
   const count = list.reduce((s, c) => s + (c.count || 1), 0);
   const overBudget = cost > RULES.packBudget;
   const tooSmall = count < RULES.packMin;

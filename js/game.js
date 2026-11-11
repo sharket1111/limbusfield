@@ -106,7 +106,8 @@ function cpuPackDefs() {
 function makePlayer(id, name, avatar, ctrl) {
   return {
     id, name, avatar, ctrl,
-    hp: RULES.maxHp, sp: 0, won: RULES.startWon, stg: RULES.staggerMax,
+    hp: RULES.maxHp, maxHp: RULES.maxHp, sp: 0, won: RULES.startWon, stg: RULES.staggerMax, stgMax: RULES.staggerMax,
+    res: { slash: 1, pierce: 1, blunt: 1 }, passives: [],
     hand: [],
     pile: null,
     status: newStatus(),
@@ -296,7 +297,7 @@ function damage(p, n, source = '', killer = null) {
 function heal(p, n) {
   if (!p.alive || n <= 0) return 0;
   const before = p.hp;
-  p.hp = Math.min(RULES.maxHp, p.hp + n);
+  p.hp = Math.min(p.maxHp || RULES.maxHp, p.hp + n);
   const got = p.hp - before;
   if (got > 0) floatText(p, '+' + got, 'heal');
   return got;
@@ -343,6 +344,7 @@ function kill(p, killer = null) {
   toastAll(`${p.name} 탈락!`, 'bad');
   // 누군가 쓰러지면: 처치자는 고양, 나머지는 동요
   for (const q of alive()) changeSp(q, q === killer ? 15 : -5, true);
+  if (killer && killer.alive) firePassives(killer, 'kill', null);
 }
 
 function changeSp(p, n, quiet = false) {
@@ -479,7 +481,7 @@ function buildAttack(cards) {
   const coinMax = coins.reduce((s, c) => s + c.power, 0);
   // 공격 가중치: 이 공격에 맞는 사람 수 (주 카드 기준)
   const weight = Math.max(1, Math.min(5, Math.round(+main.weight || 1)));
-  return { atk, attr: main.attr, fx: [...fx], effects, coins, coinMax, cards, weight, name: cards.map((c) => c.name).join(' + ') };
+  return { atk, attr: main.attr, dtype: dtypeOf(main), fx: [...fx], effects, coins, coinMax, cards, weight, name: cards.map((c) => c.name).join(' + ') };
 }
 
 // 수비 코인
@@ -496,8 +498,9 @@ function defenseCoins(armors) {
 const DEF_KIND = { guard: '가드', evade: '회피', counter: '반격' };
 const defKind = (c) => (c && DEF_KIND[c.kind] ? c.kind : 'guard');
 
-function armorMatches(armor, attr) {
-  return armor.attr === 'all' || armor.attr === attr;
+// 공격 유형·속성과 상관없이 모든 수비 카드로 대응 가능
+function armorMatches() {
+  return true;
 }
 
 function armorDef(target, armors) {
@@ -532,7 +535,7 @@ async function performAttack(attacker, cards, targets) {
 
   // 출혈: 공격할 때마다 피해
   if (has(attacker, 'bleed')) {
-    triggerOnAttack(attacker);
+    triggerOnAttack(attacker, targets[0] || null);
     renderAll();
     await sleep(350);
     if (!attacker.alive) return;
@@ -570,7 +573,7 @@ function prepareCoins(p, coins, ctx = {}) {
       } else if (e.key === 'pwrOneSided' && !ctx.clash) why = '일방 공격';
       else if (e.key === 'pwrClash' && ctx.clash) why = '합';
       else if (e.key === 'pwrIfKw' && ctx.foe && has(ctx.foe, e.kw)) why = `상대 ${kwName(e.kw)}`;
-      else if (e.key === 'pwrLowHp' && p.hp <= RULES.maxHp / 2) why = '빈사';
+      else if (e.key === 'pwrLowHp' && p.hp <= (p.maxHp || RULES.maxHp) / 2) why = '빈사';
       else if (e.key === 'pwrHighSp' && p.sp >= (e.cnt || 0)) why = `정신력 ${e.cnt} 이상`;
       else if (e.key === 'reuse') reuse += e.cnt || 1;
       if (why) { power += pot; boosts.push(`${why} +${pot}`); }
@@ -681,6 +684,7 @@ async function resolveHit(attacker, target, info) {
     }
     log(`${pname(W)} 합 승리! 남은 코인 ${strike.length}개로 ${plan.length}회 공격 ${coinsHTML(strike)}`);
     changeSp(W, 5, true); changeSp(L, -5, true);
+    firePassives(W, 'clashWin', L);
     strikeHits(W, L, winfo, plan);
     return;
   }
@@ -695,7 +699,7 @@ async function resolveHit(attacker, target, info) {
     const total = planTotal(plan);
     const ms = showClash(attacker, info, ca, pa, target, [], null, null, 'open', 'open', total, 'd', 0,
       { strike: { s: 'a', coins: ca, hits: packHits(plan) } });
-    log(`${pname(attacker)} ${coinsHTML(ca)} → ${pname(target)} 무방비 ${plan.length}회 공격${info.fx.includes('all') ? ' (광역: 앞면만 적중)' : ''}${pierce ? ' (관통)' : ''}`);
+    log(`${pname(attacker)} ${coinsHTML(ca)} → ${pname(target)} 무방비 ${plan.length}회 공격${info.fx.includes('all') ? ' (광역: 앞면만 적중)' : ''}${pierce ? ' (방어 무시)' : ''}`);
     renderAll();
     await sleep(ms);
     strikeHits(attacker, target, info, plan);
@@ -799,13 +803,16 @@ const packHits = (plan) => plan.map((h) => ({ d: h.dmg, m: h.miss ? 1 : 0 }));
 function strikeHits(attacker, target, info, plan) {
   let dealt = 0, landed = 0;
   const stag = has(target, 'staggered');
+  const rm = resOf(target, info.dtype);
+  if (rm !== 1) log(`${pname(target)} ${DTYPES[info.dtype].icon} ${DTYPES[info.dtype].name} ${resInfo(rm)[1]} — 피해 ×${rm}`);
   plan.forEach((h, i) => {
     if (!target.alive) return;
     const tag = plan.length > 1 ? ` ${i + 1}타` : '';
     if (h.miss) { log(`${pname(attacker)}${tag} 뒷면 — <span class="muted">빗나감</span>`); return; }
     landed++;
-    let dmg = rollCrit(attacker, h.dmg);
+    let dmg = rollCrit(attacker, h.dmg, target);
     if (stag) dmg = Math.ceil(dmg * RULES.staggerMult);
+    if (rm !== 1) dmg = Math.round(dmg * rm);
     if (dmg > 0) {
       damage(target, dmg, `<span class="muted">${info.name}${tag}</span>${stag ? ' 💢' : ''} 피격`, attacker);
       staggerDamage(target, dmg);
@@ -836,18 +843,27 @@ function strikeHits(attacker, target, info, plan) {
     changeSp(target, -10);
   }
   if (target.alive) applyEffects(info.effects.filter((e) => e.when === 'hit'), attacker, target);
+  firePassives(attacker, 'hit', target);
+  if (dealt > 0) firePassives(target, 'hurt', attacker);
   return dealt;
 }
 
 // 피해 적중 공통 처리 (한 번에 들어가는 피해: 가드 후 피해, 반격 등)
 function landHit(attacker, target, dmg, info, rolls = []) {
   if (dmg <= 0) return;
-  dmg = rollCrit(attacker, dmg);
+  dmg = rollCrit(attacker, dmg, target);
   if (has(target, 'staggered')) {
     const up = Math.ceil(dmg * RULES.staggerMult);
     log(`💢 흐트러진 상대에게 ${dmg} → <b>${up}</b> 피해`);
     dmg = up;
   }
+  const rm = resOf(target, info.dtype);
+  if (rm !== 1) {
+    const r = Math.round(dmg * rm);
+    log(`${pname(target)} ${DTYPES[info.dtype].icon} ${DTYPES[info.dtype].name} ${resInfo(rm)[1]} — ${dmg} → <b>${r}</b>`);
+    dmg = r;
+  }
+  if (dmg <= 0) return;
   damage(target, dmg, `<span class="muted">${info.name}</span> 피격`, attacker);
   attacker.dmgDealt += dmg;
   staggerDamage(target, dmg);
@@ -1006,7 +1022,7 @@ async function tradeSell(p, card, goods, target) {
 function exchangeLimits(p) {
   return {
     total: p.hp + p.sp + p.won,
-    hp: [1, RULES.maxHp],
+    hp: [1, p.maxHp || RULES.maxHp],
     sp: [Math.min(p.sp, 0), RULES.maxSp],   // 정신력은 0(또는 현재값) 아래로는 못 내림
     won: [0, RULES.maxWon],
   };
@@ -1139,14 +1155,21 @@ async function takeTurn(p) {
   await sleep(450);
 
   // 흐트러짐 게이지 회복
-  if (!has(p, 'staggered')) p.stg = Math.min(RULES.staggerMax, p.stg + RULES.staggerRegen);
+  if (!has(p, 'staggered')) p.stg = Math.min(p.stgMax || RULES.staggerMax, p.stg + RULES.staggerRegen);
 
-  // 화상
-  if (has(p, 'burn')) {
+  // 화상 계열
+  if (kwFamily('burn').some((k) => has(p, k))) {
     triggerTurnStart(p);
     renderAll();
     await sleep(350);
     if (!p.alive) return;
+  }
+  // 패시브: 턴 시작 시
+  if (p.passives && p.passives.some((ps) => ps.on === 'turnStart')) {
+    firePassives(p, 'turnStart');
+    renderAll();
+    await sleep(300);
+    if (!p.alive || checkEnd()) return;
   }
 
   const staggered = has(p, 'staggered');
@@ -1166,7 +1189,7 @@ async function takeTurn(p) {
       log(`${pname(p)} 💢 흐트러져서 행동할 수 없습니다. 자세를 바로잡습니다... (흐트러짐 게이지 회복)`);
       floatText(p, '흐트러짐', 'block');
       p.status.staggered = { pot: 0, cnt: 0 };
-      p.stg = RULES.staggerMax;
+      p.stg = p.stgMax || RULES.staggerMax;
     }
     if (panicking) {
       log(`${pname(p)} 😱 공황 상태라 행동할 수 없습니다. 정신을 추스릅니다... (정신력 0으로 회복)`);
@@ -1246,14 +1269,20 @@ function startMatch(cfg) {
   G.sel = { main: null, plus: [], target: null, goods: null };
   G.defs = {};
   registerDefs(CARDS);
+  clearCustomKeywords();
+  cfg.players.forEach((x, i) => {
+    for (const k of (x.pack && x.pack.keywords) || []) registerKeyword({ ...k, fx: k.fx.map((e) => nsEffect(e, `p${i}`)) }, `p${i}_${k.id}`);
+  });
 
   G.players = cfg.players.map((x, i) => {
     const p = makePlayer(i, x.name, x.avatar, x.ctrl);
     p.cid = x.cid;
     p.look = normalizeLook(x.look) || randomLook(x.name);
     p.packName = x.pack ? x.pack.name : '';
-    p.packDefs = x.pack && x.pack.cards.length ? nsCards(x.pack.cards, `p${i}`) : [];
+    p.packDefs = x.pack && x.pack.cards && x.pack.cards.length ? x.pack.cards.map((c) => nsCard(c, `p${i}`)) : [];
     registerDefs(p.packDefs);
+    applySheet(p, x.pack && x.pack.sheet);
+    p.passives = p.passives.map((ps) => ({ ...ps, e: nsEffect(ps.e, `p${i}`) }));
     return p;
   });
 

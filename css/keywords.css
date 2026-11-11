@@ -16,3 +16,25 @@
 .kwi-prev { width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; background: #18151c; border-radius: 6px; }
 .kwi-prev .kwi { width: 32px; height: 32px; }
 .kwicons-btns { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* 캐릭터 스탯 / 나만의 키워드 창 */
+.panel.sheet-panel, .panel.kwm-panel { max-width: 760px; width: 100%; max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; text-align: left; }
+.sheet-panel h3, .kwm-panel h3 { margin: 10px 0 2px; font-size: 15px; }
+.sh-sum { padding: 8px 12px; border-left: 3px solid var(--green); background: var(--bg2); display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.sh-sum b { font-size: 20px; color: var(--green); }
+.sh-sum.over { border-color: var(--red); } .sh-sum.over b { color: var(--red); }
+.sh-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sh-label { width: 120px; font-weight: 700; font-size: 13px; }
+.sh-row input[type=range] { flex: 1; min-width: 140px; max-width: 320px; accent-color: var(--gold); }
+.sh-val { width: 40px; }
+.sh-pts { font-size: 12px; font-weight: 700; min-width: 34px; }
+.sh-passive { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px; background: var(--bg2); border-radius: 6px; }
+.sh-passive .eff-row { flex: 1; }
+.kwm-box { padding: 10px; background: var(--bg2); border-radius: 8px; display: flex; flex-direction: column; gap: 6px; }
+.kwm-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.kwm-head input:not([type]) { width: 110px; }
+.kwm-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; background: #18151c; border-radius: 6px; }
+.kwm-icon .kwi { width: 28px; height: 28px; }
+.kwm-hue input { width: 110px; vertical-align: middle; }
+.kwm-fx { display: flex; flex-direction: column; gap: 4px; }
+.passive { color: var(--gold); font-weight: 700; }

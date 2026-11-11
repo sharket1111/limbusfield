@@ -81,7 +81,11 @@ function cardHTML(c, opt = {}) {
         ${stat}
         ${sub ? `<span class="c-sub">${sub}</span>` : ''}
       </div></div>
-      <div class="c-badge" title="${a ? a.name : TYPE_NAME[c.type]}"><span>${a ? a.icon : glyph}</span></div>
+      ${(() => {
+        const atk = c.type === 'weapon' || (c.type === 'ego' && c.kind === 'attack');
+        const dt = atk ? DTYPES[dtypeOf(c)] : null;
+        return `<div class="c-badge" title="${dt ? dt.name : a ? a.name : TYPE_NAME[c.type]}"><span>${dt ? dt.icon : a ? a.icon : glyph}</span></div>`;
+      })()}
     </div>
     <div class="c-ribbon"><span class="c-sin" title="${sin.name}">${sin.name[0]}</span><span class="c-name">${c.name}</span></div>
     <div class="c-coinrow">${coins}</div>
@@ -95,6 +99,7 @@ function describeCard(c) {
   const a = ATTR[c.attr];
   const parts = [`코스트 ${cardCost(c)}`, `${SINS[sinOf(c)].name}`];
   if (c.type === 'weapon') parts.push(`공격력 ${c.atk}`);
+  if (c.type === 'weapon' || (c.type === 'ego' && c.kind === 'attack')) parts.push(`${DTYPES[dtypeOf(c)].icon} ${DTYPES[dtypeOf(c)].name}`);
   if (c.type === 'armor') parts.push(`${DEF_KIND[defKind(c)]} · 수비 위력 ${c.def}`);
   if (c.type === 'ego') parts.push(`위력 ${c.power} · 정신력 ${c.cost} 소모`);
   if (a) parts.push(`${a.icon} ${a.name}`);
@@ -138,7 +143,7 @@ function spBar(p) {
 function stgBar(p) {
   const st = has(p, 'staggered');
   return `<div class="bar stg ${st ? 'broken' : ''}" title="흐트러짐 게이지 — 피격 피해만큼 줄고, 0이 되면 흐트러짐">
-    <div style="width:${(p.stg / RULES.staggerMax) * 100}%"></div><span>${st ? '💢 흐트러짐' : `흐트러짐 ${p.stg}`}</span></div>`;
+    <div style="width:${(p.stg / (p.stgMax || RULES.staggerMax)) * 100}%"></div><span>${st ? '💢 흐트러짐' : `흐트러짐 ${p.stg}`}</span></div>`;
 }
 
 const handCount = (p) => (p.handCount != null ? p.handCount : p.hand.length);
@@ -236,6 +241,8 @@ function renderField() {
       + ` ${targeting && p.alive && p.id !== G.meId ? 'targetable' : ''} ${G.sel.target && G.sel.target.id === p.id ? 'targeted' : ''}`
       + ` ${G.defendReq && G.defendReq.attacker === p ? 'attacking' : ''} ${p.id === G.meId && G.defendReq ? 'defending' : ''}`;
     el.style.cssText = `left:${pos.x}%;bottom:${pos.b}%;--s:${pos.s};z-index:${pos.z}`;
+    el.title = `${p.name} — HP ${p.hp}/${p.maxHp || RULES.maxHp} · 흐트러짐 ${p.stg}/${p.stgMax || RULES.staggerMax}\n${resLine(p)}`
+      + (p.passives && p.passives.length ? `\n패시브: ${p.passives.map((ps) => passiveText(ps).replace(/<[^>]+>/g, '')).join(' / ')}` : '');
     $('.ff-base', el).className = `ff-base t-${team}`;
     const ring = $('.ff-ring', el);
     ring.outerHTML = ringSVG(p, stag);
@@ -251,7 +258,8 @@ function renderField() {
   ARROW_TIMER = setTimeout(() => drawArrows(), 400);   // 자리 이동 애니메이션이 끝난 뒤 다시
   const hint = $('#field-hint');
   if (hint) {
-    hint.textContent = G.dragCard ? (needsTarget(G.dragCard) ? '공격할 상대에게 놓으세요' : '무대에 놓으면 사용합니다')
+    const overP = DRAG.over ? G.players.find((q) => q.id === +DRAG.over.dataset.pid) : null;
+    hint.textContent = G.dragCard ? (overP && (G.dragCard.type === 'weapon' || G.dragCard.kind === 'attack') ? `${overP.name}: ${resLine(overP)}` : needsTarget(G.dragCard) ? '공격할 상대에게 놓으세요' : '무대에 놓으면 사용합니다')
       : G.humanResolve && !G.acting && !G.defendReq ? '카드를 상대에게 끌어다 놓아 사용' : '';
   }
 }
@@ -291,6 +299,11 @@ function dragMove(x, y) {
   g.classList.toggle('can-drop', !!okTarget || (!needsTarget(DRAG.card) && inField));
   DRAG.inField = inField;
   if (needsTarget(DRAG.card)) drawArrows({ x, y });
+  const hint = $('#field-hint');
+  if (hint) {
+    const overP = DRAG.over ? G.players.find((q) => q.id === +DRAG.over.dataset.pid) : null;
+    hint.textContent = overP && (DRAG.card.type === 'weapon' || DRAG.card.kind === 'attack') ? `${overP.name}: ${resLine(overP)}` : needsTarget(DRAG.card) ? '공격할 상대에게 놓으세요' : '무대에 놓으면 사용합니다';
+  }
 }
 
 function dragEnd(useIt) {
@@ -406,7 +419,8 @@ function renderMe() {
     const info = buildAttack([sel.main, ...sel.plus]);
     const a = ATTR[info.attr];
     prev.innerHTML = `<span style="color:${a.color}">${a.icon} ${a.name}</span> 위력 <b>${info.atk}</b> ~ ${info.atk + info.coinMax}${info.fx.includes('twice') ? ' ×2' : ''}
-      ${sel.target ? ` → ${sel.target.avatar} ${sel.target.name}${has(sel.target, 'staggered') ? ' <span class="neg">💢 흐트러짐 (피해 1.5배)</span>' : ''}` : ''}
+      · ${DTYPES[info.dtype].icon} ${DTYPES[info.dtype].name}
+      ${sel.target ? ` → ${sel.target.avatar} ${sel.target.name}${resTag(sel.target, info.dtype)}${has(sel.target, 'staggered') ? ' <span class="neg">💢 흐트러짐 (피해 1.5배)</span>' : ''}` : ''}
       ${sel.main.type === 'weapon' && p.hand.some((c) => c && c.plus && c.type === 'weapon' && c !== sel.main && !sel.plus.includes(c)) ? '<span class="muted"> · 보조 무기를 덧붙일 수 있음</span>' : ''}`;
   } else if (sel.main && sel.main.type === 'trade') {
     const t = sel.target ? ` → ${sel.target.avatar} ${sel.target.name}` : '';
@@ -421,6 +435,16 @@ function renderMe() {
     const cur = G.players[G.current];
     prev.innerHTML = cur && !G.over ? `<span class="muted">${cur.avatar} ${cur.name}의 차례입니다…</span>` : '';
   }
+}
+
+// 대상의 내성 표시 (보통이면 빈칸)
+function resTag(p, dtype) {
+  const m = resOf(p, dtype);
+  if (m === 1) return '';
+  return ` <span class="${m > 1 ? 'pos' : 'neg'}">(${DTYPES[dtype].name} ${resInfo(m)[1]} ×${m})</span>`;
+}
+function resLine(p) {
+  return Object.entries(DTYPES).map(([d, v]) => `${v.icon}${v.name} ${resInfo(resOf(p, d))[1]} ×${resOf(p, d)}`).join(' · ');
 }
 
 function renderInfo() {
@@ -669,13 +693,12 @@ function humanDefend(p, attacker, info) {
 const defKindOf = (c) => (c.type === 'weapon' ? 'clash' : defKind(c));
 function defCanUse(c, info) {
   if (c.type === 'weapon') return true;
-  if (c.type !== 'armor' || !armorMatches(c, info.attr)) return false;
+  if (c.type !== 'armor') return false;
   return !(defKind(c) === 'guard' && info.fx.includes('pierce'));
 }
-function defWhyNot(c, info) {
+function defWhyNot(c) {
   if (c.type !== 'weapon' && c.type !== 'armor') return '무기(합)나 수비 카드만 낼 수 있습니다';
-  if (!armorMatches(c, info.attr)) return `수비 카드는 ${ATTR[info.attr].name} 또는 전속성만 쓸 수 있습니다`;
-  return '관통 공격에는 가드를 쓸 수 없습니다';
+  return '방어 무시 공격에는 가드를 쓸 수 없습니다';
 }
 const defPicked = () => {
   const R = G.defendReq, p = me();
@@ -819,8 +842,10 @@ function startSolo() {
   const pack = getActivePack();
   const cards = packCards(pack);
   if (deckMode !== 'base' && !cards.length) { toast('선택한 카드팩에 카드가 없습니다. 기본 카드로 시작합니다.'); }
+  const sh = sheetSummary(pack.sheet);
+  if (!sh.valid) { toast(`「${pack.name}」의 캐릭터 스탯 포인트가 상한을 넘습니다 (${sh.points}/${sh.budget}). 카드 공방에서 고쳐 주세요`, 'bad'); return; }
   if (deckMode === 'personal') {
-    const s = packSummary(cards);
+    const s = packSummary(cards, pack.keywords);
     if (!s.valid) {
       toast(s.tooSmall ? `개인 덱은 ${RULES.packMin}장 이상이어야 합니다 (현재 ${s.count}장)` : `팩 코스트가 상한(${RULES.packBudget})을 넘습니다 (현재 ${s.cost})`, 'bad');
       return;
@@ -829,7 +854,8 @@ function startSolo() {
   const cpuN = +$('#in-cpu').value;
   const names = shuffle([...CPU_NAMES]);
   const avs = shuffle([...CPU_AVATARS]);
-  const players = [{ name, avatar: '🜲', ctrl: 'local', look: getLook(), pack: deckMode === 'base' ? null : { name: pack.name, cards } }];
+  const players = [{ name, avatar: '🜲', ctrl: 'local', look: getLook(),
+    pack: { name: pack.name, cards: deckMode === 'base' ? [] : cards, sheet: pack.sheet, keywords: pack.keywords } }];
   for (let i = 0; i < cpuN; i++) players.push({ name: names[i], avatar: avs[i], ctrl: 'cpu', pack: null });
   startMatch({ mode: 'solo', meId: 0, players, deckMode: deckMode === 'base' ? 'mixed' : deckMode,
     speed: +$('#in-speed').value, difficulty: $('#in-diff').value });

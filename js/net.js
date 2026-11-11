@@ -135,7 +135,7 @@ const Net = {
   myName() { return cleanText(($('#mp-name').value || $('#in-name').value || '').trim(), 10) || '관리자'; },
   myPack() {
     const pk = getActivePack();
-    return { name: pk.name, cards: packCards(pk) };
+    return { name: pk.name, cards: packCards(pk), sheet: pk.sheet, keywords: pk.keywords };
   },
 
   // ================= 방장 =================
@@ -229,8 +229,9 @@ const Net = {
 
   packInfo(pack) {
     if (!pack) return null;
-    const s = packSummary(pack.cards);
-    return { name: pack.name, count: s.count, cost: s.cost, valid: s.valid, over: s.overBudget, small: s.tooSmall };
+    const s = packSummary(pack.cards, pack.keywords || []);
+    const sh = sheetSummary(normalizeSheet(pack.sheet));
+    return { name: pack.name, count: s.count, cost: s.cost, valid: s.valid && sh.valid, over: s.overBudget, small: s.tooSmall, stat: sh.points, statOver: !sh.valid };
   },
 
   lobbyView(youCid) {
@@ -258,6 +259,7 @@ const Net = {
       const info = this.packInfo(h.pack) || { count: 0, cost: 0, small: true, over: false };
       if (s.deckMode === 'personal' && info.count < RULES.packMin) return `${h.name}: 개인 덱은 ${RULES.packMin}장 이상 필요 (현재 ${info.count}장)`;
       if (s.deckMode !== 'base' && s.costLimit && info.over) return `${h.name}: 팩 코스트 초과 (${info.cost}/${RULES.packBudget})`;
+      if (s.costLimit && info.statOver) return `${h.name}: 캐릭터 스탯 포인트 초과 (${info.stat}/${RULES.statBudget})`;
     }
     return '';
   },
@@ -269,7 +271,8 @@ const Net = {
     const names = shuffle([...CPU_NAMES]);
     const avs = shuffle([...CPU_AVATARS]);
     const humanAvs = ['🜲', '🦁', '🐯', '🐻', '🦅', '🐼'];
-    const usePack = (pk) => (s.deckMode === 'base' || !pk || !pk.cards.length ? null : pk);
+    // 카드는 덱 방식에 따라, 캐릭터 스탯·나만의 키워드는 항상 가져감
+    const usePack = (pk) => (!pk ? null : { ...pk, cards: s.deckMode === 'base' ? [] : pk.cards });
     const players = [
       { name: this.myName(), avatar: humanAvs[0], ctrl: 'local', look: getLook(), pack: usePack(this.hostPack) },
       ...this.members.map((m, i) => ({ name: m.name, avatar: humanAvs[(i + 1) % humanAvs.length], ctrl: 'remote', cid: m.cid, look: m.look, pack: usePack(m.pack) })),
@@ -281,8 +284,11 @@ const Net = {
       speed: s.speed, difficulty: s.difficulty,
       onReady: () => {
         const defs = Object.values(G.defs).filter((c) => c.custom);
+        // 나만의 키워드 정의 (이름·기반·색·특수 효과)
+        const kws = Object.entries(KEYWORDS).filter(([, k]) => k.custom && !k.preview)
+          .map(([id, k]) => ({ id, name: k.name, base: k.base, hue: +((k.icon.match(/hue-rotate\((\d+)deg/) || [])[1] || 0), fx: k.fx }));
         for (const p of G.players) {
-          if (p.ctrl === 'remote') this.tp.send(p.cid, { t: 'start', meId: p.id, defs, speed: s.speed });
+          if (p.ctrl === 'remote') this.tp.send(p.cid, { t: 'start', meId: p.id, defs, kws, speed: s.speed });
         }
       },
     });
@@ -387,6 +393,12 @@ const Net = {
         G.acting = false;
         G.hover = null;
         resetSel();
+        clearCustomKeywords();
+        for (const k of Array.isArray(m.kws) ? m.kws.slice(0, 24) : []) {
+          const id = String(k && k.id || '');
+          const n = normalizeKeyword({ ...k, id: 'k_x' });
+          if (n && KW_ID_RE.test(id)) registerKeyword(n, id);
+        }
         registerDefs(CARDS);
         registerDefs((Array.isArray(m.defs) ? m.defs : []).map((d) => {
           const n = normalizeCard(d);
@@ -502,6 +514,7 @@ function snapshotFor(viewer) {
     players: G.players.map((p) => ({
       id: p.id, name: p.name, avatar: p.avatar, ctrl: p.ctrl === 'cpu' ? 'cpu' : 'human',
       hp: p.hp, sp: p.sp, won: p.won, stg: p.stg, status: p.status, alive: p.alive,
+      maxHp: p.maxHp, stgMax: p.stgMax, res: p.res, passives: p.passives,
       handCount: p.hand.length, hand: p === viewer ? p.hand.map(cardRef) : null, look: p.look,
     })),
   };
@@ -524,6 +537,7 @@ function applySnapshot(s) {
       id: +x.id, name: cleanText(x.name, 12), avatar: cleanText(x.avatar, 4), ctrl: x.ctrl === 'cpu' ? 'cpu' : 'human',
       look: normalizeLook(x.look) || randomLook(String(x.name || '')),
       hp: +x.hp, sp: +x.sp, won: +x.won, stg: +x.stg, status, alive: !!x.alive, handCount: +x.handCount,
+      ...(() => { const sh = normalizeSheet({ hp: x.maxHp, stg: x.stgMax, res: x.res, passives: x.passives }); return { maxHp: sh.hp, stgMax: sh.stg, res: sh.res, passives: sh.passives }; })(),
       hand: Array.isArray(x.hand) ? x.hand.map(resolveCard).filter(Boolean) : [],
     };
   });
@@ -562,7 +576,7 @@ function renderLobby(v) {
   $('#mp-players').innerHTML = v.players.map((p) => {
     const pk = p.pack;
     const packTxt = p.kind === 'cpu' ? (v.settings.deckMode === 'personal' ? '기본 카드로 만든 덱' : '')
-      : pk ? `${pk.name} · ${pk.count}장 · 코스트 ${pk.cost}/${RULES.packBudget} ${pk.valid ? '<span class="pos">✔</span>' : `<span class="neg">${pk.over ? '코스트 초과' : '장수 부족'}</span>`}`
+      : pk ? `${cleanText(pk.name, 20)} · ${+pk.count || 0}장 · 코스트 ${+pk.cost || 0}/${RULES.packBudget} · 스탯 ${+pk.stat || 0}/${RULES.statBudget} ${pk.valid ? '<span class="pos">✔</span>' : `<span class="neg">${pk.statOver ? '스탯 초과' : pk.over ? '코스트 초과' : '장수 부족'}</span>`}`
         : '<span class="muted">카드팩 없음</span>';
     return `<div class="mp-player ${p.you ? 'you' : ''}">
       <span class="mp-role">${p.kind === 'host' ? '👑 방장' : p.kind === 'cpu' ? '🤖 CPU' : '👤 참가자'}</span>
