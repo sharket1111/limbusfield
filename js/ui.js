@@ -418,7 +418,8 @@ function renderMe() {
   const sel = G.sel;
   const order = { ego: -1, weapon: 0, trade: 2, item: 3, armor: 4 };
   const val = (c) => c.atk || c.def || c.cost || 0;
-  const sorted = [...p.hand].filter(Boolean).sort((a, b) => order[a.type] - order[b.type] || val(b) - val(a));
+  // 보관한 E.G.O는 손패에 보이지 않음 — 초상화를 꾹 눌러 E.G.O 선택 화면에서 고름
+  const sorted = [...p.hand].filter((c) => c && c.type !== 'ego').sort((a, b) => order[a.type] - order[b.type] || val(b) - val(a));
   hand.innerHTML = sorted.map((c) => {
     let cls = '';
     if (G.defendReq) {
@@ -431,7 +432,7 @@ function renderMe() {
     else if (myTurn && sel.main && sel.main.type === 'weapon' && c.type === 'weapon' && c.plus) cls = 'can-plus';
     if (c.type === 'ego' && !canPayEgo(p, c)) cls += ' no-sp';
     return cardHTML(c, { uid: true, cls });
-  }).join('').replace(/(<div class="card ego-card[\s\S]*?)(<div class="card (?!ego-card))/, '$1<div class="ego-sep"></div>$2').replace(/^/, egoCount(p) ? `<div class="ego-label">E.G.O<br><b>${egoCount(p)}/${RULES.maxEgo}</b></div>` : '') || `<div class="muted empty-hand">${p.alive ? '손패가 없습니다' : '탈락 — 관전 중'}</div>`;
+  }).join('').replace(/(<div class="card ego-card[\s\S]*?)(<div class="card (?!ego-card))/, '$1<div class="ego-sep"></div>$2') || `<div class="muted empty-hand">${p.alive ? '손패가 없습니다' : '탈락 — 관전 중'}</div>`;
   $$('.card', hand).forEach((el) => {
     el.onclick = () => { if (!DRAG.used) onHandClick(+el.dataset.uid); };
     el.onmouseenter = () => { G.hover = p.hand.find((c) => c && c.uid === +el.dataset.uid); renderInfo(); };
