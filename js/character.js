@@ -187,25 +187,58 @@ const portraitSVG = (look) => charSVG(look, { bust: true });
 //  d = { aId, dId, mode: clash|open|nullify, result: atk|def|tie|open|nullify,
 //        aBase, dBase, aCoins:[{h,p,r}], dCoins, pa, pd, aCards:[ref], dCards:[ref], gear, attr, stag, spd }
 // ------------------------------------------------------------
-function clashDuration(d) {
-  const n = Math.max(d.aCoins.length, d.dCoins.length);
-  return 380 + n * 200 + 150 + 1350;
+// 연출 시간표 (호스트와 참가자가 같은 값으로 계산)
+const CL_T = { intro: 560, round: 680, hit: 320, tail: 1050 };
+
+// 이긴 쪽이 남은 코인으로 때리는 계획 { side, base, coins } (없으면 null)
+function strikePlan(d) {
+  if (d.mode === 'open') return { side: 'a', base: d.aBase, coins: d.aCoins };
+  if (d.mode === 'clash' && d.strike && d.strike.s !== 't') return { side: d.strike.s, base: d.strike.s === 'a' ? d.aBase : d.dBase, coins: d.strike.coins };
+  return null;
 }
+
+function clashTimes(d) {
+  const t = { roundsEnd: 0, strikeAt: 0, hits: [], tc: 0, end: 0 };
+  const plan = strikePlan(d);
+  if (d.mode === 'clash') {
+    t.roundsEnd = CL_T.intro + d.rounds.length * CL_T.round;
+    if (!plan) { t.end = t.roundsEnd + 1100; return t; }
+    t.strikeAt = t.roundsEnd + 420;
+  } else if (d.mode === 'open') {
+    t.strikeAt = CL_T.intro;
+  } else {
+    t.tc = 380 + Math.max(d.aCoins.length, d.dCoins.length) * 200 + 150;
+    t.end = t.tc + 1350;
+    return t;
+  }
+  const n = Math.max(1, plan.coins.length);
+  for (let i = 0; i < n; i++) t.hits.push(t.strikeAt + 330 + i * CL_T.hit);
+  t.end = t.hits[n - 1] + CL_T.tail;
+  return t;
+}
+const clashDuration = (d) => clashTimes(d).end;
 
 function validateClash(d) {
   if (!d || typeof d !== 'object') return null;
-  const coins = (arr) => (Array.isArray(arr) ? arr.slice(0, 16).map((c) => ({ h: c && c.h ? 1 : 0, p: Math.max(0, Math.min(99, +c.p || 0)), r: Math.max(0, Math.min(9, +c.r || 0)) })) : []);
+  const coins = (arr) => (Array.isArray(arr) ? arr.slice(0, 16).map((c) => ({ h: c && c.h ? 1 : 0, p: Math.max(0, Math.min(99, +(c && c.p) || 0)), r: Math.max(0, Math.min(9, +(c && c.r) || 0)) })) : []);
   const refs = (arr) => (Array.isArray(arr) ? arr.slice(0, 8).map((r) => ({ uid: +r.uid || 0, id: String(r.id || '') })) : []);
-  return {
+  const num = (x) => Math.max(-999, Math.min(999, Math.round(+x || 0)));
+  const side = (x) => (['a', 'd', 't'].includes(x) ? x : 't');
+  const out = {
     aId: +d.aId, dId: +d.dId,
     mode: ['clash', 'open', 'nullify', 'guard', 'evade', 'counter'].includes(d.mode) ? d.mode : 'open',
     result: ['atk', 'def', 'tie', 'open', 'nullify'].includes(d.result) ? d.result : 'open',
     dmg: Math.max(0, Math.min(999, +d.dmg || 0)), dmgTo: d.dmgTo === 'a' ? 'a' : d.dmgTo === 'd' ? 'd' : '',
-    aBase: +d.aBase || 0, dBase: +d.dBase || 0, pa: +d.pa || 0, pd: +d.pd || 0,
+    aBase: num(d.aBase), dBase: num(d.dBase), pa: num(d.pa), pd: num(d.pd),
     aCoins: coins(d.aCoins), dCoins: coins(d.dCoins), aCards: refs(d.aCards), dCards: refs(d.dCards),
     gear: d.gear === 'orb' ? 'orb' : 'blade', attr: ATTR[d.attr] ? d.attr : 'phys', stag: d.stag ? 1 : 0,
     spd: Math.max(0.05, Math.min(2, +d.spd || 1)),
+    rounds: Array.isArray(d.rounds) ? d.rounds.slice(0, 12).map((r) => ({ a: coins(r && r.a), d: coins(r && r.d), pa: num(r && r.pa), pd: num(r && r.pd), w: side(r && r.w) })) : [],
+    strike: d.strike && typeof d.strike === 'object' ? { s: side(d.strike.s), coins: coins(d.strike.coins) } : null,
   };
+  out.aN = Math.max(0, Math.min(16, Number.isFinite(+d.aN) && d.aN !== undefined ? +d.aN : out.aCoins.length));
+  out.dN = Math.max(0, Math.min(16, Number.isFinite(+d.dN) && d.dN !== undefined ? +d.dN : out.dCoins.length));
+  return out;
 }
 
 // 연출 방식: full(전체 화면) | inline(무대 안)
@@ -226,24 +259,29 @@ function statusIcons(p, withSp = true) {
   return out.join('');
 }
 
-// 캐릭터 발 밑: 원형 받침 + 큰 HP 숫자와 바 + 정신력 원 + 이름 + 키워드 아이콘
-//  내 캐릭터는 파랑, 다른 사람은 빨강
+// 정신력 얼굴 아이콘: 높으면 웃고, 낮으면 찡그림
+function moodFace(sp) {
+  const mouth = sp >= 15 ? 'M7 13.2 Q10 16 13 13.2' : sp <= -15 ? 'M7 15 Q10 12.2 13 15' : 'M7.2 14 L12.8 14';
+  return `<svg class="ff-face" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8.2"/><circle class="e" cx="7.3" cy="8.4" r="1.25"/><circle class="e" cx="12.7" cy="8.4" r="1.25"/><path d="${mouth}"/></svg>`;
+}
+
+// 캐릭터 발 밑: 빨간 HP 숫자 + 정신력 얼굴 아이콘 / 얇은 HP·흐트러짐 줄 / 키워드 아이콘 / 이름
+//  받침 고리는 내 캐릭터 파랑, 다른 사람 빨강
 function footHTML(p, opts = {}) {
   const team = p.id === G.meId ? 'me' : 'foe';
   const hpPct = Math.max(0, (p.hp / RULES.maxHp) * 100);
   const stgPct = Math.max(0, (p.stg / RULES.staggerMax) * 100);
   const staggered = opts.stag || (p.status && p.status.staggered && p.status.staggered.cnt > 0);
+  const mood = p.sp >= 15 ? 'up' : p.sp < 0 ? 'neg' : '';
   return `<div class="f-foot t-${team}">
     <div class="ff-row">
-      <div class="ff-hp">
-        <b class="ff-hpn">${p.hp}</b>
-        <div class="ff-hpbar"><i style="width:${hpPct}%"></i></div>
-        <div class="ff-stg ${staggered ? 'broken' : ''}" title="흐트러짐 ${p.stg}"><i style="width:${stgPct}%"></i></div>
-      </div>
-      <div class="ff-sp ${p.sp < 0 ? 'neg' : ''}" title="정신력"><b>${p.sp}</b></div>
+      <b class="ff-hpn">${p.hp}</b>
+      <span class="ff-sp ${mood}" title="정신력">${moodFace(p.sp)}<b>${p.sp}</b></span>
     </div>
-    <div class="ff-name">${p.name}${staggered ? ' <span class="stag">💢 흐트러짐</span>' : ''}</div>
+    <div class="ff-hpbar"><i style="width:${hpPct}%"></i></div>
+    <div class="ff-stg ${staggered ? 'broken' : ''}" title="흐트러짐 ${p.stg}"><i style="width:${stgPct}%"></i></div>
     <div class="f-status">${statusIcons(p, false)}</div>
+    <div class="ff-name">${p.name}${staggered ? ' <span class="stag">💢 흐트러짐</span>' : ''}</div>
   </div>`;
 }
 
@@ -273,15 +311,19 @@ const LETTERBOX = `<svg class="lbox" viewBox="0 0 100 56" preserveAspectRatio="n
   <defs><linearGradient id="lbGold" x1="0" y1="0" x2="1" y2="0">
     <stop offset="0" stop-color="#fff3c9" stop-opacity="0"/><stop offset=".25" stop-color="#ffe7a8"/><stop offset=".6" stop-color="#e0a84a"/><stop offset="1" stop-color="#fff3c9" stop-opacity=".2"/>
   </linearGradient></defs>
-  <polygon points="62,0 100,0 100,22" class="lb-fill"/>
+  <polygon points="72,0 100,0 100,15" class="lb-fill"/>
   <polygon points="0,36 0,56 34,56" class="lb-fill"/>
-  <polyline points="60,-1 101,23" class="lb-gold"/><polyline points="66,-1 101,18" class="lb-gold thin"/>
+  <polyline points="70,-1 101,16" class="lb-gold"/><polyline points="76,-1 101,12" class="lb-gold thin"/>
   <polyline points="-1,35 35,57" class="lb-gold"/><polyline points="-1,40 28,57" class="lb-gold thin"/>
 </svg>`;
 
 let STREET_CACHE = '';
 const streetSVG = () => (STREET_CACHE || (STREET_CACHE = buildBackstreet()));
 
+// 합 연출 (림버스식)
+//  두 캐릭터가 가운데로 다가와 머리 위에 스킬 띠(위력 육각 + 이름 + 코인)를 띄우고,
+//  합을 할 때마다 코인을 다시 던져 부딪힘 → 진 쪽 코인이 하나씩 깨짐 → 이긴 쪽이 남은 코인으로 연타
+const POSES = ['engage', 'clinch', 'knock', 'strike', 'dash', 'hurt', 'recoil', 'lunge', 'guard', 'evade'];
 function renderClash(d) {
   if (!d) return;
   const A = G.players.find((p) => p.id === d.aId), D = G.players.find((p) => p.id === d.dId);
@@ -293,6 +335,7 @@ function renderClash(d) {
   box.dataset.token = token;
   const live = () => box.dataset.token === token;
   const T = (ms, fn) => setTimeout(() => { if (live()) fn(); }, ms * d.spd);
+  const tm = clashTimes(d), plan = strikePlan(d);
   const attrColor = ATTR[d.attr].color;
   const aCards = d.aCards.map(resolveCard).filter(Boolean), dCards = d.dCards.map(resolveCard).filter(Boolean);
   const armorColor = dCards[0] && ATTR[dCards[0].attr] ? ATTR[dCards[0].attr].color : '#9aa4b2';
@@ -304,7 +347,21 @@ function renderClash(d) {
   const lines = aCards.length ? describeCard(aCards[0]).lines.slice(0, 6) : [];
   const total = d.stag && d.dmgTo === 'd' ? Math.ceil(d.dmg * RULES.staggerMult) : d.dmg;
   const order = G.players.filter((p) => p.alive || p.id === d.dId);
-  const pips = (coins) => coins.map(() => '<i></i>').join('');
+  const sinCol = (c) => (c && SINS[sinOf(c)] ? SINS[sinOf(c)].color : '#9aa4b2');
+  const sinVars = (hex) => `--sin:${hex};--sin2:${shade(hex, -0.55)};--sin3:${shade(hex, 0.45)}`;
+  const isClash = d.mode === 'clash';
+  const aN = isClash ? d.aN : d.aCoins.length, dN = isClash ? d.dN : d.dCoins.length;
+  const pips = (n) => '<i></i>'.repeat(n);
+  const team = (p) => (p.id === G.meId ? 'me' : 'foe');
+
+  const skA = `<div class="f-skill sk-a" style="${sinVars(sinCol(aCards[0]))}">
+      <div class="sk-pips">${pips(aN)}</div>
+      <div class="sk-row"><div class="sk-badge"><small class="sk-bonus"></small><b class="sk-pow">${d.aBase}</b></div><div class="sk-name">${skillName}</div></div>
+    </div>`;
+  const skD = d.mode === 'open' ? '' : `<div class="f-skill sk-d k-${d.mode}" style="${sinVars(sinCol(dCards[0]))}">
+      <div class="sk-pips">${pips(dN)}</div>
+      <div class="sk-row"><div class="sk-name">${isClash ? '' : `<small class="sk-kind">${modeName}</small>`}${dCards.map((c) => c.name).join(' + ') || '방어'}</div><div class="sk-badge def"><small class="sk-bonus"></small><b class="sk-pow">${contested ? d.dBase : '∞'}</b></div></div>
+    </div>`;
 
   box.classList.remove('pop');
   box.innerHTML = `
@@ -313,26 +370,21 @@ function renderClash(d) {
         <div class="street">${streetSVG()}<div class="rain"></div></div>
         <div class="floor"></div>
         <div class="fighter left enter">
-          <div class="f-fig"><div class="ff-base t-${A.id === G.meId ? 'me' : 'foe'}"></div><div class="f-body">${charSVG(A.look, { gear: d.gear, gearColor: attrColor })}</div></div>
+          ${skA}
+          <div class="f-fig"><div class="ff-base t-${team(A)}"></div><div class="f-body">${charSVG(A.look, { gear: d.gear, gearColor: attrColor })}</div><div class="f-hit"></div></div>
           ${footHTML(A)}
         </div>
         <div class="fighter right enter">
-          <div class="f-fig"><div class="ff-base t-${D.id === G.meId ? 'me' : 'foe'}"></div><div class="f-body flip">${charSVG(D.look, { gear: dGear, gearColor: armorColor })}</div></div>
+          ${skD}
+          <div class="f-fig"><div class="ff-base t-${team(D)}"></div><div class="f-body flip">${charSVG(D.look, { gear: dGear, gearColor: armorColor })}</div><div class="f-hit"></div></div>
           ${footHTML(D, { stag: d.stag })}
         </div>
         <div class="impact"></div>
+        <div class="clash-count"><small>합</small><b>0</b></div>
       </div>
       ${burstSVG(Math.floor(Math.random() * 1e6))}
       ${LETTERBOX}
-      <div class="skill sk-a">
-        <div class="sk-pips">${pips(d.aCoins)}</div>
-        <div class="sk-row"><div class="sk-badge"><small class="sk-bonus"></small><b class="sk-pow">${d.aBase}</b></div><div class="sk-name">${skillName}</div></div>
-        <div class="sk-lines">${lines.map((l, i) => `<div class="sk-line" style="animation-delay:${(0.25 + i * 0.08) * d.spd}s">${l}</div>`).join('')}</div>
-      </div>
-      ${d.mode !== 'open' ? `<div class="skill sk-d k-${d.mode}">
-        <div class="sk-pips">${pips(d.dCoins)}</div>
-        <div class="sk-row"><div class="sk-name"><small class="sk-kind">${modeName}</small>${dCards.map((c) => c.name).join(' + ') || '방어'}</div><div class="sk-badge def"><small class="sk-bonus"></small><b class="sk-pow">${contested ? d.dBase : '∞'}</b></div></div>
-      </div>` : ''}
+      <div class="sk-lines sk-info">${lines.map((l, i) => `<div class="sk-line" style="animation-delay:${(0.25 + i * 0.08) * d.spd}s">${l}</div>`).join('')}</div>
       <div class="who"><b>${A.name}</b> ▶ <b>${D.name}</b> · ${modeName}</div>
       <div class="total ${total ? '' : 'none'}"><small>TOTAL</small><b>0</b></div>
       <div class="chain">${order.map((p) => `<span class="ch ${p.id === d.aId ? 'atk' : p.id === d.dId ? 'def' : ''} ${p.alive ? '' : 'dead'}">${portraitSVG(p.look)}</span>`).join('<i class="link"></i>')}</div>
@@ -347,109 +399,178 @@ function renderClash(d) {
   }
   const ar = $('.arena', box);
   const fa = $('.fighter.left', ar), fd = $('.fighter.right', ar);
-  const skA = $('.sk-a', ar), skD = $('.sk-d', ar);
-  const powA = $('.sk-pow', skA), powD = skD ? $('.sk-pow', skD) : null;
+  const sA = $('.sk-a', ar), sD = $('.sk-d', ar);
+  const powA = $('.sk-pow', sA), powD = sD ? $('.sk-pow', sD) : null;
   const banner = $('.clash-banner', ar), impact = $('.impact', ar), cam = $('.cam', ar);
-  const totalEl = $('.total b', ar);
-  requestAnimationFrame(() => requestAnimationFrame(() => { fa.classList.remove('enter'); fd.classList.remove('enter'); ar.classList.add('on'); }));
+  const totalEl = $('.total b', ar), cnt = $('.clash-count', ar);
 
-  // 코인 공개: 점이 앞면(금)/뒷면(어둠)으로 바뀌고 위력이 올라감
-  const n = Math.max(d.aCoins.length, d.dCoins.length);
-  let sumA = d.aBase, sumD = d.dBase;
-  const bump = (el) => { el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); };
-  const flip = (sk, c, i) => {
-    const pip = $$('.sk-pips i', sk)[i];
-    if (pip) pip.className = c.h ? 'h' + (c.r ? ' r' : '') : 't';
-  };
-  for (let i = 0; i < n; i++) {
-    T(380 + i * 200, () => {
-      const ca = d.aCoins[i], cd = d.dCoins[i];
-      if (ca) { flip(skA, ca, i); if (ca.h) { sumA += ca.p; powA.textContent = sumA; bump(powA); } }
-      if (cd && skD && contested) { flip(skD, cd, i); if (cd.h) { sumD += cd.p; powD.textContent = sumD; bump(powD); } }
-    });
-  }
-  const tc = 380 + n * 200 + 150;
-  T(tc - 60, () => {
-    powA.textContent = d.pa;
-    if (powD && contested) powD.textContent = d.pd;
-    const bonusA = d.pa - d.aBase - d.aCoins.reduce((s, c) => s + (c.h ? c.p : 0), 0);
-    if (bonusA > 0) $('.sk-bonus', skA).textContent = '+' + bonusA;
-  });
-  const countUp = () => {
-    if (!total) return;
-    const t0 = performance.now(), dur = 420 * d.spd;
+  // 도우미
+  const re = (el, cls) => { if (!el) return; el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); };
+  const pose = (el, ...cls) => { el.classList.remove(...POSES); if (cls.length) el.classList.add(...cls); };
+  const bump = (el) => el && re(el, 'bump');
+  const shake = () => { re(box, 'shake'); T(300, () => box.classList.remove('shake')); };
+  const win = (sk) => sk && sk.classList.add('win');
+  const lose = (sk) => sk && sk.classList.add('lose');
+  const say = (t) => { banner.textContent = t; re(banner, 'show'); };
+  const pipCls = (c) => (c ? (c.h ? 'h' + (c.r ? ' r' : '') : 't') : '');
+  // 남은 코인(left개)은 앞/뒷면 표시, 그 뒤는 깨진 코인
+  const setPips = (sk, coins, left) => { if (sk) $$('.sk-pips i', sk).forEach((pip, i) => { pip.className = i < left ? pipCls(coins[i]) : 'x'; }); };
+  const breakPip = (sk, i) => { const pip = sk && $$('.sk-pips i', sk)[i]; if (pip) pip.className = 'x brk'; };
+  // HP 줄이기 + TOTAL 올리기 (from → to, 표시용 누적 피해)
+  const hpEl = d.dmgTo === 'a' ? fa : fd, hpWho = d.dmgTo === 'a' ? A : D;
+  const countTo = (from, to) => {
+    if (!total || to === from) return;
+    const t0 = performance.now(), dur = 240 * d.spd;
     const step = (t) => {
       if (!live()) return;
       const k = Math.min(1, (t - t0) / dur);
-      totalEl.textContent = Math.round(total * k);
+      const v = Math.round(from + (to - from) * k);
+      totalEl.textContent = v;
       if (d.dmgTo) {
-        const who = d.dmgTo === 'd' ? D : A;
-        const f = d.dmgTo === 'd' ? fd : fa;
-        const hpLeft = Math.max(0, who.hp - Math.round(total * k));
-        const bar = $('.ff-hpbar i', f), num = $('.ff-hpn', f);
+        const hpLeft = Math.max(0, hpWho.hp - v);
+        const bar = $('.ff-hpbar i', hpEl), num = $('.ff-hpn', hpEl);
         if (bar) bar.style.width = `${(hpLeft / RULES.maxHp) * 100}%`;
-        if (num) { num.textContent = hpLeft; num.classList.add('hit'); }
+        if (num) { num.textContent = hpLeft; re(num, 'hit'); }
       }
       if (k < 1) requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
   };
-  const hit = (extra = '') => {
-    impact.classList.add('show', ...extra.split(' ').filter(Boolean));
-    ar.classList.add('burst-on');
-    cam.classList.add('zoom');
-    box.classList.add('shake');
-    T(300, () => box.classList.remove('shake'));
-  };
 
-  const win = (sk) => sk && sk.classList.add('win');
-  const lose = (sk) => sk && sk.classList.add('lose');
-  const say = (t) => { banner.textContent = t; banner.classList.add('show'); };
-  if (d.mode === 'clash') {
-    T(tc, () => { fa.classList.add('lunge'); fd.classList.add('lunge'); });
-    T(tc + 260, () => { hit(); fa.classList.add('swing'); fd.classList.add('swing'); });
-    T(tc + 520, () => {
-      if (d.result === 'atk') { win(skA); lose(skD); fa.classList.add('strike'); fd.classList.add('hurt'); say(`${A.name} 합 승리`); }
-      else if (d.result === 'def') { win(skD); lose(skA); fd.classList.add('strike'); fa.classList.add('hurt'); say(`${D.name} 합 승리`); }
-      else { fa.classList.add('recoil'); fd.classList.add('recoil'); say('상쇄'); }
-      countUp();
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    fa.classList.remove('enter'); fd.classList.remove('enter');
+    if (isClash) { fa.classList.add('engage'); fd.classList.add('engage'); }
+    ar.classList.add('on');
+  }));
+
+  // ---- 합: 여러 번 부딪히며 코인을 깨뜨림 ----
+  if (isClash) {
+    let aLeft = d.aN, dLeft = d.dN;
+    d.rounds.forEach((r, i) => {
+      const t0 = CL_T.intro + i * CL_T.round;
+      T(t0, () => {
+        sA.classList.remove('rwin'); sD.classList.remove('rwin');
+        setPips(sA, r.a, aLeft); setPips(sD, r.d, dLeft);
+        powA.textContent = r.pa; powD.textContent = r.pd; bump(powA); bump(powD);
+        $('b', cnt).textContent = i + 1; re(cnt, 'show');
+        pose(fa, 'clinch'); pose(fd, 'clinch');
+        re(fa, 'swing'); re(fd, 'swing');
+      });
+      T(t0 + 250, () => {
+        re(impact, 'show'); shake();
+        if (i === 0) ar.classList.add('burst-on');
+        if (r.w === 'a') { if (dLeft > 0) breakPip(sD, --dLeft); pose(fd, 'knock'); pose(fa, 'engage'); sA.classList.add('rwin'); re(fd.querySelector('.f-fig'), 'flash'); }
+        else if (r.w === 'd') { if (aLeft > 0) breakPip(sA, --aLeft); pose(fa, 'knock'); pose(fd, 'engage'); sD.classList.add('rwin'); re(fa.querySelector('.f-fig'), 'flash'); }
+        else { pose(fa, 'knock'); pose(fd, 'knock'); }
+      });
+      T(t0 + 520, () => { pose(fa, 'engage'); pose(fd, 'engage'); fa.classList.remove('swing'); fd.classList.remove('swing'); });
     });
-  } else if (d.mode === 'guard') {
-    T(tc, () => { fa.classList.add('dash'); fd.classList.add('guard'); });
-    T(tc + 280, () => { fa.classList.add('swing'); hit(d.result === 'def' ? 'on-def block' : 'on-def'); });
-    T(tc + 540, () => {
-      if (d.result === 'def') { win(skD); lose(skA); fa.classList.add('recoil'); say('가드!'); }
-      else { win(skA); fd.classList.add('hurt'); say(`가드 — ${d.pd} 경감`); countUp(); }
+    T(tm.roundsEnd, () => {
+      cnt.classList.remove('show');
+      if (!plan) { pose(fa, 'recoil'); pose(fd, 'recoil'); say('상쇄'); return; }
+      const W = plan.side === 'a' ? A : D;
+      win(plan.side === 'a' ? sA : sD); lose(plan.side === 'a' ? sD : sA);
+      say(`${W.name} 합 승리`);
     });
-  } else if (d.mode === 'evade') {
-    T(tc, () => { fa.classList.add('dash'); });
-    T(tc + 280, () => {
-      fa.classList.add('swing');
-      if (d.result === 'def') { fd.classList.add('evade'); }
-      else { hit('on-def'); fd.classList.add('hurt'); }
-    });
-    T(tc + 540, () => {
-      if (d.result === 'def') { win(skD); lose(skA); say('회피!'); }
-      else { win(skA); lose(skD); say('회피 실패'); countUp(); }
-    });
-  } else if (d.mode === 'counter') {
-    T(tc, () => { fa.classList.add('dash'); });
-    T(tc + 280, () => { fa.classList.add('swing'); fd.classList.add('swing'); hit('on-def block'); });
-    T(tc + 520, () => {
-      if (d.result === 'def') { win(skD); lose(skA); fd.classList.add('strike'); fa.classList.add('hurt'); say('반격!'); }
-      else { win(skA); lose(skD); fd.classList.add('hurt'); say('반격 실패'); }
-      countUp();
-    });
-  } else if (d.mode === 'open') {
-    T(tc, () => { fa.classList.add('dash'); });
-    T(tc + 280, () => { fa.classList.add('swing'); hit('on-def'); fd.classList.add('hurt'); countUp(); });
-    T(tc + 560, () => say(d.stag ? '흐트러짐 — 피해 ×1.5' : '일방 공격'));
-  } else {
-    T(tc, () => { fa.classList.add('dash'); fd.classList.add('guard'); });
-    T(tc + 280, () => { fa.classList.add('swing'); hit('on-def block'); });
-    T(tc + 520, () => { fa.classList.add('recoil'); say('무효'); });
   }
-  if (full) T(clashDuration(d) - 120, () => box.classList.remove('show'));
+
+  // ---- 이긴 쪽(일방 공격이면 공격자)이 남은 코인으로 연타 ----
+  if (plan) {
+    const wEl = plan.side === 'a' ? fa : fd, lEl = plan.side === 'a' ? fd : fa;
+    const wSk = plan.side === 'a' ? sA : sD, wPow = plan.side === 'a' ? powA : powD;
+    const coins = plan.coins;
+    const incs = coins.length ? coins.map((c, k) => (k ? 0 : plan.base) + (c.h ? c.p : 0)) : [plan.base];
+    const sumInc = incs.reduce((s, x) => s + x, 0) || 1;
+    let cum = 0, shown = 0, pow = plan.base;
+    T(tm.strikeAt, () => {
+      setPips(wSk, [], coins.length);
+      if (wPow) { wPow.textContent = plan.base; bump(wPow); }
+      banner.classList.remove('show');
+      pose(wEl, isClash ? 'strike' : 'dash');
+      cam.classList.add('zoom');
+    });
+    incs.forEach((inc, k) => T(tm.hits[k], () => {
+      const c = coins[k];
+      if (c) {
+        const pip = wSk && $$('.sk-pips i', wSk)[k];
+        if (pip) pip.className = pipCls(c);
+        if (c.h) pow += c.p;
+      }
+      if (wPow) { wPow.textContent = pow; bump(wPow); }
+      re(wEl, 'swing');
+      re($('.f-hit', lEl), 'show');
+      re(lEl.querySelector('.f-fig'), 'flash');
+      pose(lEl, k === incs.length - 1 ? 'hurt' : 'knock');
+      if (k === incs.length - 1) re(lEl, 'hurtanim');
+      ar.classList.add('burst-on');
+      shake();
+      cum += inc;
+      const to = Math.round((total * cum) / sumInc);
+      countTo(shown, to); shown = to;
+    }));
+    if (!isClash) T(tm.hits[tm.hits.length - 1] + 200, () => say(d.stag ? '흐트러짐 — 피해 ×1.5' : '일방 공격'));
+  }
+
+  // ---- 수비 스킬: 한 번 던져 비교 ----
+  if (!isClash && d.mode !== 'open') {
+    const n = Math.max(d.aCoins.length, d.dCoins.length);
+    let sumA = d.aBase, sumD = d.dBase;
+    const flip = (sk, c, i) => { const pip = $$('.sk-pips i', sk)[i]; if (pip) pip.className = pipCls(c); };
+    for (let i = 0; i < n; i++) {
+      T(380 + i * 200, () => {
+        const ca = d.aCoins[i], cd = d.dCoins[i];
+        if (ca) { flip(sA, ca, i); if (ca.h) { sumA += ca.p; powA.textContent = sumA; bump(powA); } }
+        if (cd && sD && contested) { flip(sD, cd, i); if (cd.h) { sumD += cd.p; powD.textContent = sumD; bump(powD); } }
+      });
+    }
+    const tc = tm.tc;
+    T(tc - 60, () => {
+      powA.textContent = d.pa;
+      if (powD && contested) powD.textContent = d.pd;
+      const bonusA = d.pa - d.aBase - d.aCoins.reduce((s, c) => s + (c.h ? c.p : 0), 0);
+      if (bonusA > 0) $('.sk-bonus', sA).textContent = '+' + bonusA;
+    });
+    const hurtD = () => { pose(fd, 'hurt'); re(fd, 'hurtanim'); re($('.f-hit', fd), 'show'); };
+    const hurtA = () => { pose(fa, 'hurt'); re(fa, 'hurtanim'); re($('.f-hit', fa), 'show'); };
+    const hit = (extra = '') => {
+      impact.classList.add('show', ...extra.split(' ').filter(Boolean));
+      ar.classList.add('burst-on');
+      cam.classList.add('zoom');
+      shake();
+    };
+    if (d.mode === 'guard') {
+      T(tc, () => { pose(fa, 'dash'); pose(fd, 'guard'); });
+      T(tc + 280, () => { re(fa, 'swing'); hit(d.result === 'def' ? 'on-def block' : 'on-def'); });
+      T(tc + 540, () => {
+        if (d.result === 'def') { win(sD); lose(sA); pose(fa, 'recoil'); say('가드!'); }
+        else { win(sA); hurtD(); say(`가드 — ${d.pd} 경감`); countTo(0, total); }
+      });
+    } else if (d.mode === 'evade') {
+      T(tc, () => pose(fa, 'dash'));
+      T(tc + 280, () => {
+        re(fa, 'swing');
+        if (d.result === 'def') pose(fd, 'evade');
+        else { hit('on-def'); hurtD(); }
+      });
+      T(tc + 540, () => {
+        if (d.result === 'def') { win(sD); lose(sA); say('회피!'); }
+        else { win(sA); lose(sD); say('회피 실패'); countTo(0, total); }
+      });
+    } else if (d.mode === 'counter') {
+      T(tc, () => pose(fa, 'dash'));
+      T(tc + 280, () => { re(fa, 'swing'); re(fd, 'swing'); hit('on-def block'); });
+      T(tc + 520, () => {
+        if (d.result === 'def') { win(sD); lose(sA); hurtA(); say('반격!'); }
+        else { win(sA); lose(sD); hurtD(); say('반격 실패'); }
+        countTo(0, total);
+      });
+    } else {
+      T(tc, () => { pose(fa, 'dash'); pose(fd, 'guard'); });
+      T(tc + 280, () => { re(fa, 'swing'); hit('on-def block'); });
+      T(tc + 520, () => { pose(fa, 'recoil'); say('무효'); });
+    }
+  }
+  if (full) T(tm.end - 120, () => box.classList.remove('show'));
 }
 
 // ------------------------------------------------------------

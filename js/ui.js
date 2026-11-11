@@ -526,8 +526,8 @@ function defPreview() {
     body = `<span class="muted">무기 → ⚔합 · 🛡가드(여러 장) · 💨회피 · ↩반격 중에서 고르세요. 그대로 받으면 피해 <b class="neg">${info.atk}~${info.atk + info.coinMax}</b> (평균 ${st.expA.toFixed(1)})</span>`;
   } else if (R.mode === 'clash') {
     const dinfo = buildAttack(picked);
-    const st = clashStats(info.atk, info.coins, attacker.sp, dinfo.atk, dinfo.coins, p.sp, true);
-    body = `⚔ 합 승률 <b class="pos">${pct(st.win)}</b> · 무승부 ${pct(st.tie)} · 패배 <b class="neg">${pct(st.lose)}</b> — 이기면 평균 <b class="pos">${(st.win ? st.expD / st.win : 0).toFixed(1)}</b> 피해를 주고, 지면 평균 <b class="neg">${(st.lose ? st.exp / st.lose : 0).toFixed(1)}</b> 받음`;
+    const st = clashSim(info.atk, info.coins, attacker.sp, dinfo.atk, dinfo.coins, p.sp);
+    body = `⚔ 합 승률 <b class="pos">${pct(st.win)}</b>${st.tie >= 0.005 ? ` · 상쇄 ${pct(st.tie)}` : ''} · 패배 <b class="neg">${pct(st.lose)}</b> (평균 ${st.rounds.toFixed(1)}합) — 이기면 남은 코인으로 평균 <b class="pos">${(st.win ? st.expD / st.win : 0).toFixed(1)}</b> 피해, 지면 평균 <b class="neg">${(st.lose ? st.exp / st.lose : 0).toFixed(1)}</b> 받음`;
   } else if (picked.some((c) => hasFx(c, 'nullify'))) {
     body = '🛡 공격을 <b class="pos">무효화</b>합니다';
   } else {

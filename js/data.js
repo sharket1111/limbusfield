@@ -221,6 +221,7 @@ const RULES = {
   staggerMax: 40,    // 흐트러짐 게이지 (피격 피해만큼 감소, 0이 되면 흐트러짐)
   staggerRegen: 5,   // 자기 턴 시작 시 회복량
   staggerMult: 1.5,  // 흐트러짐 상태에서 받는 피해 배율
+  clashMaxRounds: 10, // 합 최대 횟수 (넘으면 상쇄)
   // 카드팩 / 코스트
   packBudget: 150,   // 팩 코스트 상한 (카드 코스트 × 장수의 합)
   packMin: 20,       // 개인 덱으로 쓰려면 필요한 최소 장수

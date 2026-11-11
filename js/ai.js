@@ -179,7 +179,7 @@ function cpuDefend(p, info, attacker) {
     if (G.difficulty === 'hard') { const extra = pluses.filter((x) => x !== w); if (extra.length) sets.push([w, ...extra]); }
     for (const set of sets) {
       const dinfo = buildAttack(set);
-      const st = clashStats(info.atk, info.coins, attacker.sp, dinfo.atk, dinfo.coins, p.sp, true);
+      const st = clashSim(info.atk, info.coins, attacker.sp, dinfo.atk, dinfo.coins, p.sp, 200);
       consider('clash', set, st.exp, st.expD);
     }
   }

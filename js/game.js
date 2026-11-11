@@ -379,18 +379,51 @@ const defaultCoins = () => Array.from({ length: RULES.coins }, () => ({ power: R
 
 // 코인 목록을 던져 [{ coin, head, power, reused }] 반환
 // 재사용 코인: 앞면이면 같은 코인을 다시 던지고, 앞면이 나올 때마다 위력이 한 번 더 더해짐
-function rollCoins(p, coins) {
-  const chance = headChance(p.sp);
+function rollWith(coins, chance, rnd = Math.random) {
   return coins.map((coin) => {
-    const head = Math.random() < chance;
+    const head = rnd() < chance;
     let power = coin.power, reused = 0;
     if (head && coin.reuse) {
-      while (reused < coin.reuse && Math.random() < chance) { power += coin.power; reused++; }
+      while (reused < coin.reuse && rnd() < chance) { power += coin.power; reused++; }
     }
     return { coin, head, power, reused };
   });
 }
+const rollCoins = (p, coins) => rollWith(coins, headChance(p.sp));
 const coinSum = (rolls) => rolls.reduce((s, r) => s + (r.head ? r.power : 0), 0);
+
+// 림버스식 합: 남은 코인을 매번 다시 던져 위력을 비교하고, 진 쪽은 마지막 코인 1개가 깨짐
+//  마지막 코인까지 깨진 쪽이 합에서 짐 (무승부는 코인 유지, 최대 횟수를 넘기면 상쇄)
+//  반환: { rounds: [{ a, d, pa, pd, w }], winner: 'a' | 'd' | 't', aLeft, dLeft }
+function runClash(aBase, aCoins, chA, dBase, dCoins, chD, rnd = Math.random) {
+  let aLeft = aCoins.slice(), dLeft = dCoins.slice();
+  const rounds = [];
+  for (let i = 0; i < RULES.clashMaxRounds; i++) {
+    const a = rollWith(aLeft, chA, rnd), d = rollWith(dLeft, chD, rnd);
+    const pa = aBase + coinSum(a), pd = dBase + coinSum(d);
+    const w = pa > pd ? 'a' : pd > pa ? 'd' : 't';
+    rounds.push({ a, d, pa, pd, w });
+    if (w === 'a') { dLeft = dLeft.slice(0, -1); if (!dLeft.length) return { rounds, winner: 'a', aLeft, dLeft }; }
+    if (w === 'd') { aLeft = aLeft.slice(0, -1); if (!aLeft.length) return { rounds, winner: 'd', aLeft, dLeft }; }
+  }
+  return { rounds, winner: 't', aLeft, dLeft };
+}
+
+// 합 결과 예측 (몬테카를로, 고정 시드라 화면이 흔들리지 않음) — 방어자 기준
+//  win/tie/lose 확률, exp: 받는 피해 기대값, expD: 주는 피해 기대값, max: 받는 최대 피해
+function clashSim(aBase, aCoins, spA, dBase, dCoins, spD, n = 400) {
+  const rnd = seededRng(7919);
+  const chA = headChance(spA), chD = headChance(spD);
+  let win = 0, tie = 0, lose = 0, exp = 0, expD = 0, max = 0, rounds = 0;
+  for (let i = 0; i < n; i++) {
+    const r = runClash(aBase, aCoins, chA, dBase, dCoins, chD, rnd);
+    rounds += r.rounds.length;
+    if (r.winner === 'a') { const dmg = aBase + coinSum(rollWith(r.aLeft, chA, rnd)); lose++; exp += dmg; max = Math.max(max, dmg); }
+    else if (r.winner === 'd') { win++; expD += dBase + coinSum(rollWith(r.dLeft, chD, rnd)); }
+    else tie++;
+  }
+  return { win: win / n, tie: tie / n, lose: lose / n, exp: exp / n, expD: expD / n, max, rounds: rounds / n };
+}
 
 function coinsHTML(rolls) {
   return rolls.map((r) => `<span class="coin ${r.head ? 'head' : 'tail'}${r.reused ? ' reuse' : ''}" title="코인 위력 ${r.coin.power}${r.reused ? ` · 재사용 ${r.reused}회` : ''}">${r.head ? r.power + (r.reused ? '↻' : '') : '○'}</span>`).join('');
@@ -610,6 +643,38 @@ async function resolveHit(attacker, target, info) {
     return;
   }
 
+  // ---- 합: 무기 vs 무기 (림버스식 — 코인을 하나씩 깨뜨림) ----
+  if (resp.mode === 'clash') {
+    const dinfo = buildAttack(dcards);
+    const aCoins = prepareCoins(attacker, info.coins, { foe: target, clash: true });
+    const dCoins = prepareCoins(target, dinfo.coins, { foe: attacker, clash: true });
+    const cl = runClash(info.atk, aCoins, headChance(attacker.sp), dinfo.atk, dCoins, headChance(target.sp));
+    const result = cl.winner === 'a' ? 'atk' : cl.winner === 'd' ? 'def' : 'tie';
+    const W = cl.winner === 'a' ? attacker : target, L = cl.winner === 'a' ? target : attacker;
+    const winfo = cl.winner === 'a' ? info : dinfo;
+    let strike = [], dmg = 0;
+    if (cl.winner !== 't') {
+      strike = rollCoins(W, cl.winner === 'a' ? cl.aLeft : cl.dLeft);
+      dmg = winfo.atk + coinSum(strike);
+    }
+    const last = cl.rounds[cl.rounds.length - 1];
+    const ms = showClash(attacker, info, last.a, last.pa, target, dcards, last.d, last.pd, 'clash', result, dmg,
+      result === 'atk' ? 'd' : result === 'def' ? 'a' : '', dinfo.atk,
+      { aN: aCoins.length, dN: dCoins.length, rounds: cl.rounds, strike: { s: cl.winner, coins: strike } });
+    log(`⚔ 합 ×${cl.rounds.length}! ${pname(attacker)} vs ${pname(target)} ${dcards.map(cname).join(' + ')} — ${cl.rounds.map((r) => `<b class="${r.w === 'a' ? 'neg' : r.w === 'd' ? 'pos' : ''}">${r.pa}:${r.pd}</b>`).join(' · ')}`);
+    renderAll();
+    await sleep(ms);
+    if (cl.winner === 't') {
+      log('합 무승부 — 두 공격이 상쇄되었습니다.');
+      floatText(target, '상쇄', 'block');
+      return;
+    }
+    log(`${pname(W)} 합 승리! 남은 코인 ${strike.length}개로 위력 <b>${dmg}</b> ${coinsHTML(strike)}`);
+    changeSp(W, 5, true); changeSp(L, -5, true);
+    landHit(W, L, dmg, winfo, strike);
+    return;
+  }
+
   const contested = resp.mode !== 'none';
   const ca = rollCoins(attacker, prepareCoins(attacker, info.coins, { foe: target, clash: contested }));
   const pa = info.atk + coinSum(ca);
@@ -621,32 +686,6 @@ async function resolveHit(attacker, target, info) {
     renderAll();
     await sleep(ms);
     landHit(attacker, target, pa, info, ca);
-    return;
-  }
-
-  // ---- 합: 무기 vs 무기 ----
-  if (resp.mode === 'clash') {
-    const dinfo = buildAttack(dcards);
-    const cd = rollCoins(target, prepareCoins(target, dinfo.coins, { foe: attacker, clash: true }));
-    const pd = dinfo.atk + coinSum(cd);
-    const result = pa > pd ? 'atk' : pd > pa ? 'def' : 'tie';
-    const dmg = Math.abs(pa - pd);
-    const ms = showClash(attacker, info, ca, pa, target, dcards, cd, pd, 'clash', result, dmg, result === 'atk' ? 'd' : result === 'def' ? 'a' : '', dinfo.atk);
-    log(`⚔ 합! ${pname(attacker)} <b>${pa}</b> ${coinsHTML(ca)} vs ${coinsHTML(cd)} <b>${pd}</b> ${pname(target)} ${dcards.map(cname).join(' + ')}`);
-    renderAll();
-    await sleep(ms);
-    if (result === 'atk') {
-      log(`${pname(attacker)} 합 승리! ${dmg} 피해`);
-      changeSp(attacker, 5, true); changeSp(target, -5, true);
-      landHit(attacker, target, dmg, info, ca);
-    } else if (result === 'def') {
-      log(`${pname(target)} 합 승리! ${dmg} 피해로 되받아칩니다`);
-      changeSp(target, 5, true); changeSp(attacker, -5, true);
-      landHit(target, attacker, dmg, dinfo, cd);
-    } else {
-      log('합 무승부 — 두 공격이 상쇄되었습니다.');
-      floatText(target, '상쇄', 'block');
-    }
     return;
   }
 
@@ -713,9 +752,12 @@ async function resolveHit(attacker, target, info) {
 // 2D 합 연출: 데이터를 만들어 이 화면에서 재생하고, 참가자에게도 보냄. 연출 길이(ms) 반환
 //  mode: open | clash | guard | evade | counter | nullify,  result: atk(공격 측 우세) | def(수비 측 우세) | tie ...
 //  dmg / dmgTo: 연출에 표시할 피해와 받는 쪽('d' 대상, 'a' 공격자)
-function showClash(attacker, info, ca, pa, target, dcards, cd, pd, mode, result, dmg = 0, dmgTo = '', dBase = 0) {
+function showClash(attacker, info, ca, pa, target, dcards, cd, pd, mode, result, dmg = 0, dmgTo = '', dBase = 0, extra = {}) {
   const pack = (rolls) => (rolls || []).map((r) => ({ h: r.head ? 1 : 0, p: r.power, r: r.reused || 0 }));
   const d = validateClash({
+    aN: extra.aN, dN: extra.dN,
+    rounds: (extra.rounds || []).map((r) => ({ a: pack(r.a), d: pack(r.d), pa: r.pa, pd: r.pd, w: r.w })),
+    strike: extra.strike ? { s: extra.strike.s, coins: pack(extra.strike.coins) } : null,
     aId: attacker.id, dId: target.id, mode, result,
     aBase: info.atk, dBase, aCoins: pack(ca), dCoins: pack(cd), pa: pa || 0, pd: pd || 0,
     aCards: info.cards.map(cardRef), dCards: dcards.map(cardRef),
