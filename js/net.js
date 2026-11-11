@@ -182,11 +182,15 @@ const Net = {
           if (this.settings.cpus > 0) this.settings.cpus--;
           else { this.tp.send(cid, { t: 'closed', reason: `방이 가득 찼습니다 (최대 ${MAX_PLAYERS}명)` }); return; }
         }
-        this.members.push({ cid, name: cleanText(m.name, 10) || '참가자', pack: m.pack ? normalizePack(m.pack) : null, lastSeen: Date.now() });
+        const nm = cleanText(m.name, 10) || '참가자';
+        this.members.push({ cid, name: nm, pack: m.pack ? normalizePack(m.pack) : null, look: normalizeLook(m.look) || randomLook(nm), lastSeen: Date.now() });
         toast(`${cleanText(m.name, 10) || '참가자'} 님이 들어왔습니다`);
         this.sendLobby();
         break;
       }
+      case 'look':
+        if (mem && !this.inGame) { mem.look = normalizeLook(m.look) || mem.look; this.sendLobby(); }
+        break;
       case 'pack':
         if (mem && !this.inGame) { mem.pack = m.pack ? normalizePack(m.pack) : null; this.sendLobby(); }
         break;
@@ -231,8 +235,8 @@ const Net = {
 
   lobbyView(youCid) {
     const players = [
-      { name: this.myName(), kind: 'host', pack: this.packInfo(this.hostPack), you: youCid === 'host' },
-      ...this.members.map((m) => ({ name: m.name, kind: 'remote', pack: this.packInfo(m.pack), you: m.cid === youCid })),
+      { name: this.myName(), kind: 'host', look: getLook(), pack: this.packInfo(this.hostPack), you: youCid === 'host' },
+      ...this.members.map((m) => ({ name: m.name, kind: 'remote', look: m.look, pack: this.packInfo(m.pack), you: m.cid === youCid })),
       ...Array.from({ length: this.settings.cpus }, (_, i) => ({ name: `CPU ${i + 1}`, kind: 'cpu', pack: null, you: false })),
     ];
     return { code: this.code, kind: this.kind, players, settings: { ...this.settings }, problem: this.startProblem() };
@@ -267,8 +271,8 @@ const Net = {
     const humanAvs = ['🜲', '🦁', '🐯', '🐻', '🦅', '🐼'];
     const usePack = (pk) => (s.deckMode === 'base' || !pk || !pk.cards.length ? null : pk);
     const players = [
-      { name: this.myName(), avatar: humanAvs[0], ctrl: 'local', pack: usePack(this.hostPack) },
-      ...this.members.map((m, i) => ({ name: m.name, avatar: humanAvs[(i + 1) % humanAvs.length], ctrl: 'remote', cid: m.cid, pack: usePack(m.pack) })),
+      { name: this.myName(), avatar: humanAvs[0], ctrl: 'local', look: getLook(), pack: usePack(this.hostPack) },
+      ...this.members.map((m, i) => ({ name: m.name, avatar: humanAvs[(i + 1) % humanAvs.length], ctrl: 'remote', cid: m.cid, look: m.look, pack: usePack(m.pack) })),
       ...Array.from({ length: s.cpus }, (_, i) => ({ name: names[i], avatar: avs[i], ctrl: 'cpu', pack: null })),
     ];
     this.inGame = true;
@@ -328,8 +332,9 @@ const Net = {
     });
   },
   async askDefend(p, attacker, info) {
-    const uids = await this.ask(p, 'defend', { attackerId: attacker.id, cards: info.cards.map(cardRef) }, RULES.defendTimeout, []);
-    return (Array.isArray(uids) ? uids : []).map((u) => p.hand.find((c) => c.uid === u)).filter(Boolean);
+    const r = await this.ask(p, 'defend', { attackerId: attacker.id, cards: info.cards.map(cardRef) }, RULES.defendTimeout, null);
+    if (!r || typeof r !== 'object' || !Array.isArray(r.uids)) return { mode: 'none', cards: [] };
+    return { mode: String(r.mode || 'none'), cards: r.uids.map((u) => p.hand.find((c) => c.uid === u)).filter(Boolean) };
   },
   end(winner) {
     for (const p of this.remotes()) this.tp.send(p.cid, { t: 'end', winnerId: winner ? winner.id : null });
@@ -348,7 +353,7 @@ const Net = {
       const cb = { onMsg: (m) => this.onClientMsg(m), onClose: () => this.hostGone('방장과 연결이 끊겼습니다') };
       this.tp = kind === 'local' ? localClientTransport(code, cb) : await peerClientTransport(code, cb);
       await withTimeout(this.tp.ready, 12000, '방에 연결할 수 없습니다');
-      this.tp.send({ t: 'hello', name: this.myName(), pack: this.myPack() });
+      this.tp.send({ t: 'hello', name: this.myName(), pack: this.myPack(), look: getLook() });
       await withTimeout(new Promise((res) => { this.onFirstLobby = res; }), 8000, '방을 찾을 수 없습니다. 코드와 연결 방식을 확인하세요');
       this.lastPing = Date.now();
       this.hb = setInterval(() => { if (Date.now() - this.lastPing > DEAD_AFTER) this.hostGone('방장의 응답이 없습니다'); }, HEARTBEAT);
@@ -417,12 +422,13 @@ const Net = {
   },
 
   applyFx(k, d) {
-    if (k === 'log') logLocal(sanitizeHTML(d.html));
+    if (k === 'clash') renderClash(validateClash(d));
+    else if (k === 'log') logLocal(sanitizeHTML(d.html));
     else if (k === 'stage') stageLocal(sanitizeHTML(d.html));
     else if (k === 'clear') clearStageLocal(sanitizeHTML(d.text || ''));
     else if (k === 'float') floatLocal(+d.pid, String(d.text || ''), String(d.cls || '').replace(/[^a-z]/g, ''));
     else if (k === 'toast') toast(String(d.text || ''), d.kind === 'bad' ? 'bad' : '');
-    else if (k === 'night') document.body.classList.toggle('night', !!d.on);
+    else if (k === 'night') { document.body.classList.toggle('night', !!d.on); updateFrameClock(); }
   },
 
   async onAsk(m) {
@@ -438,9 +444,9 @@ const Net = {
     } else if (m.k === 'defend') {
       const attacker = G.players.find((p) => p.id === d.attackerId);
       const cards = (d.cards || []).map(resolveCard).filter(Boolean);
-      if (!attacker || !cards.length || !me()) { reply([]); return; }
-      const armors = await humanDefend(me(), attacker, buildAttack(cards));
-      reply(armors.map((c) => c.uid));
+      if (!attacker || !cards.length || !me()) { reply(null); return; }
+      const resp = await humanDefend(me(), attacker, buildAttack(cards));
+      reply({ mode: resp.mode, uids: resp.cards.map((c) => c.uid) });
     } else if (m.k === 'buy') {
       const item = resolveCard(d.item);
       const target = G.players.find((p) => p.id === d.targetId);
@@ -496,7 +502,7 @@ function snapshotFor(viewer) {
     players: G.players.map((p) => ({
       id: p.id, name: p.name, avatar: p.avatar, ctrl: p.ctrl === 'cpu' ? 'cpu' : 'human',
       hp: p.hp, sp: p.sp, won: p.won, stg: p.stg, status: p.status, alive: p.alive,
-      handCount: p.hand.length, hand: p === viewer ? p.hand.map(cardRef) : null,
+      handCount: p.hand.length, hand: p === viewer ? p.hand.map(cardRef) : null, look: p.look,
     })),
   };
 }
@@ -516,6 +522,7 @@ function applySnapshot(s) {
     for (const k of Object.keys(status)) if (x.status && x.status[k]) status[k] = { pot: +x.status[k].pot || 0, cnt: +x.status[k].cnt || 0 };
     return {
       id: +x.id, name: cleanText(x.name, 12), avatar: cleanText(x.avatar, 4), ctrl: x.ctrl === 'cpu' ? 'cpu' : 'human',
+      look: normalizeLook(x.look) || randomLook(String(x.name || '')),
       hp: +x.hp, sp: +x.sp, won: +x.won, stg: +x.stg, status, alive: !!x.alive, handCount: +x.handCount,
       hand: Array.isArray(x.hand) ? x.hand.map(resolveCard).filter(Boolean) : [],
     };
@@ -536,7 +543,7 @@ function applySnapshot(s) {
 function setLobbyStatus(text) { const el = $('#mp-status'); if (el) el.textContent = text; }
 
 function showLobby() {
-  for (const id of ['#title', '#game', '#workshop']) $(id).classList.remove('show');
+  for (const id of ['#title', '#game', '#workshop', '#charedit']) $(id).classList.remove('show');
   $('#result').classList.remove('show');
   closeDialogs();
   document.body.classList.remove('night');
@@ -559,6 +566,7 @@ function renderLobby(v) {
         : '<span class="muted">카드팩 없음</span>';
     return `<div class="mp-player ${p.you ? 'you' : ''}">
       <span class="mp-role">${p.kind === 'host' ? '👑 방장' : p.kind === 'cpu' ? '🤖 CPU' : '👤 참가자'}</span>
+      <span class="mp-face">${p.look ? portraitSVG(p.look) : ''}</span>
       <b>${cleanText(p.name, 12)}</b>${p.you ? ' <span class="muted">(나)</span>' : ''}
       <span class="mp-pack">${packTxt}</span></div>`;
   }).join('');
@@ -576,6 +584,12 @@ function renderLobby(v) {
 }
 
 // 카드팩을 바꾸면 방에 알림
+// 캐릭터를 바꾸면 방에 알림
+function netLookChanged() {
+  if (Net.role === 'host' && !Net.inGame) Net.sendLobby();
+  else if (Net.role === 'client' && !Net.inGame && Net.tp) Net.tp.send({ t: 'look', look: getLook() });
+}
+
 function netPackChanged() {
   if (Net.role === 'host' && !Net.inGame) { Net.hostPack = Net.myPack(); Net.sendLobby(); }
   else if (Net.role === 'client' && !Net.inGame && Net.tp) Net.tp.send({ t: 'pack', pack: Net.myPack() });

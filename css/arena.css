@@ -1,0 +1,405 @@
+/* ============================================================
+   2D 캐릭터, 전투 시네마틱(합 연출), 캐릭터 꾸미기
+   ============================================================ */
+.char-svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.char-svg.bust { overflow: hidden; }
+.char-svg .arm-front { transform-origin: 84px 84px; transform-box: view-box; transition: transform .2s; }
+.char-svg .eye-glow, .char-svg .orb-glow { filter: drop-shadow(0 0 3px currentColor); }
+.char-svg .orb-glow { animation: orb 1.2s ease-in-out infinite alternate; }
+@keyframes orb { from { opacity: .25; } to { opacity: .6; } }
+
+/* 패널 초상화 */
+.opp-av .char-svg { width: 46px; height: 46px; border-radius: 50%; background: var(--bg2); border: 1px solid var(--line); }
+.mp-face .char-svg { width: 34px; height: 34px; border-radius: 50%; background: var(--bg2); border: 1px solid var(--line); }
+.mp-face { display: inline-flex; }
+@media (max-width: 760px) { .opp-av .char-svg { width: 32px; height: 32px; } }
+
+/* ============================================================
+   전투 시네마틱
+   ============================================================ */
+/* 전체 화면 오버레이 */
+.cine { position: fixed; inset: 0; z-index: 70; display: none; background: #000; cursor: pointer; }
+.cine.show { display: block; animation: cinein .18s ease-out; }
+@keyframes cinein { from { opacity: 0; } }
+.cine.shake, #stage.shake { animation: stshake .3s; }
+@keyframes stshake { 20% { transform: translate(-8px, 3px); } 40% { transform: translate(7px, -4px); } 60% { transform: translate(-4px, 2px); } 80% { transform: translate(3px, -1px); } }
+
+#stage:has(.arena) { padding: 0; overflow: hidden; }
+.arena { position: relative; width: 100%; height: 280px; overflow: hidden; --spd: 1; --attr: #d0d4dc; color: #f4efe6; font-family: 'Noto Sans KR', sans-serif; }
+.arena.big { height: 100%; }
+.arena .cam { position: absolute; inset: 0; transition: transform calc(.35s * var(--spd)) cubic-bezier(.2, .8, .3, 1); transform-origin: 50% 70%; }
+.arena .cam.zoom { transform: scale(1.12); }
+.arena .floor { position: absolute; left: 0; right: 0; bottom: 0; height: 30%; background: linear-gradient(180deg, transparent, rgba(0, 0, 0, .55)); }
+
+/* 캐릭터 */
+.fighter { position: absolute; bottom: 12%; width: 128px; display: flex; flex-direction: column; align-items: center; z-index: 2;
+  transition: left calc(.28s * var(--spd)) cubic-bezier(.2, .8, .3, 1), right calc(.28s * var(--spd)) cubic-bezier(.2, .8, .3, 1),
+    transform calc(.3s * var(--spd)), opacity calc(.3s * var(--spd)); }
+.arena.big .fighter { width: min(19vw, 40vh, 280px); bottom: 15%; }
+.fighter.left { left: 12%; }
+.fighter.right { right: 12%; }
+.fighter.enter.left { left: -30%; opacity: 0; }
+.fighter.enter.right { right: -30%; opacity: 0; }
+.fighter.lunge.left { left: 30%; }
+.fighter.lunge.right { right: 30%; }
+.fighter.dash.left { left: calc(88% - 2 * var(--fw, 128px)); }
+.arena.big .fighter.dash.left { left: 52%; }
+.fighter.strike.left { left: 44%; z-index: 3; }
+.fighter.strike.right { right: 44%; z-index: 3; }
+.fighter.hurt.left { left: 3%; }
+.fighter.hurt.right { right: 6%; }
+.fighter.recoil.left { left: 18%; }
+.fighter.recoil.right { right: 18%; }
+
+.f-body { width: 100%; aspect-ratio: 120 / 160; max-height: 64%; animation: bob 1.6s ease-in-out infinite; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .6)); }
+.arena:not(.big) .f-body { width: 104px; }
+.f-body.flip { transform: scaleX(-1); animation-name: bobflip; }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes bobflip { 0%, 100% { transform: scaleX(-1) translateY(0); } 50% { transform: scaleX(-1) translateY(-3px); } }
+.fighter.lunge .f-body, .fighter.dash .f-body { animation: none; transform: rotate(7deg) translateY(2px); }
+.fighter.lunge .f-body.flip, .fighter.dash .f-body.flip { transform: scaleX(-1) rotate(7deg) translateY(2px); }
+.fighter.swing .arm-front { animation: swing calc(.32s * var(--spd)) ease-out forwards; }
+@keyframes swing { 0% { transform: rotate(-80deg); } 60% { transform: rotate(60deg); } 100% { transform: rotate(40deg); } }
+.fighter.guard .arm-front { transform: rotate(-20deg) translateX(-6px); }
+.fighter.hurt .f-body { animation: hurt calc(.45s * var(--spd)) ease-out forwards; }
+.fighter.hurt .f-body.flip { animation-name: hurtflip; }
+@keyframes hurt {
+  0% { transform: rotate(0); filter: none; }
+  20% { transform: translateX(-12px) rotate(-14deg); filter: brightness(2) drop-shadow(0 0 8px #ff3b30); }
+  100% { transform: translateX(-4px) rotate(-8deg); filter: saturate(.7); }
+}
+@keyframes hurtflip {
+  0% { transform: scaleX(-1); filter: none; }
+  20% { transform: scaleX(-1) translateX(-12px) rotate(-14deg); filter: brightness(2) drop-shadow(0 0 8px #ff3b30); }
+  100% { transform: scaleX(-1) translateX(-4px) rotate(-8deg); filter: saturate(.7); }
+}
+
+/* 발밑 키워드 아이콘 줄 */
+.f-status { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 8px; margin-top: 4px; max-width: 220px; }
+.si { display: inline-flex; align-items: baseline; gap: 1px; font-size: 13px; text-shadow: 0 1px 2px #000; }
+.si b { font-family: 'Noto Serif KR', serif; font-weight: 900; font-size: 15px; color: #fff; }
+.si small { font-size: 10px; color: #cfc8d6; margin-left: 1px; }
+.si.bad b { color: #ffb4a8; }
+.si.good b { color: #a8e6ff; }
+.si.sp b { color: #ffe08a; }
+.arena:not(.big) .si { font-size: 10px; } .arena:not(.big) .si b { font-size: 11px; }
+
+/* 스킬 배너 */
+.skill { position: absolute; z-index: 9; display: flex; flex-direction: column; gap: 3px; opacity: 0; transition: opacity calc(.2s * var(--spd)), transform calc(.25s * var(--spd)); pointer-events: none; }
+.arena.on .skill { opacity: 1; }
+.skill.sk-a { left: 4%; top: 12%; align-items: flex-start; transform: translateX(-30px); }
+.skill.sk-d { right: 4%; top: 30%; align-items: flex-end; transform: translateX(30px); }
+.arena.on .skill.sk-a, .arena.on .skill.sk-d { transform: none; }
+.sk-row { display: flex; align-items: center; }
+.sk-name { background: linear-gradient(90deg, #ffd23f, #ffb02e 70%, #ff8a1f); color: #1b1206; font-weight: 900; font-size: clamp(14px, 2.2vw, 26px);
+  padding: 4px 22px 4px 16px; clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%); white-space: nowrap; max-width: 46vw; overflow: hidden; text-overflow: ellipsis;
+  box-shadow: 0 0 18px #ffb02e66; letter-spacing: -.01em; }
+.sk-d .sk-name { background: linear-gradient(270deg, #8fc4ff, #5a8fd8 70%, #3a63b0); color: #fff; clip-path: polygon(14px 0, 100% 0, 100% 100%, 0 100%); padding: 4px 16px 4px 22px; }
+.sk-badge { position: relative; width: clamp(54px, 6.5vw, 86px); aspect-ratio: 1; display: flex; align-items: center; justify-content: center; margin-left: -10px; z-index: 1;
+  clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0 50%);
+  background: radial-gradient(circle at 40% 35%, #fff6c9, #ffd23f 45%, #c98a12); }
+.sk-badge::after { content: ''; position: absolute; inset: 4px; clip-path: inherit; background: radial-gradient(circle at 50% 40%, #3a2a10, #120c04); }
+.sk-badge.def { background: radial-gradient(circle at 40% 35%, #e6f2ff, #8fc4ff 45%, #3a63b0); margin-left: 0; margin-right: -10px; }
+.sk-badge.def::after { background: radial-gradient(circle at 50% 40%, #142238, #060a12); }
+.sk-pow { position: relative; z-index: 1; font-family: 'Noto Serif KR', serif; font-weight: 900; font-size: clamp(22px, 3.2vw, 42px); color: #fff; text-shadow: 0 0 10px #ffd23f; line-height: 1; }
+.sk-d .sk-pow { text-shadow: 0 0 10px #8fc4ff; }
+.sk-pow.bump { animation: bump calc(.22s * var(--spd)); }
+@keyframes bump { 50% { transform: scale(1.35); } }
+.sk-bonus { position: absolute; top: -2px; left: 50%; transform: translateX(-50%); z-index: 2; font-weight: 900; font-size: 12px; color: #ffe08a; text-shadow: 0 1px 2px #000; }
+.sk-pips { display: flex; gap: 5px; padding-left: 8px; }
+.sk-d .sk-pips { padding-left: 0; padding-right: 8px; }
+.sk-pips i { width: 11px; height: 11px; border-radius: 50%; border: 2px solid #ffd23f; background: transparent; transition: background .1s, transform .1s; }
+.sk-d .sk-pips i { border-color: #8fc4ff; }
+.sk-pips i.h { background: #ffd23f; box-shadow: 0 0 8px #ffd23f; transform: scale(1.15); }
+.sk-d .sk-pips i.h { background: #8fc4ff; box-shadow: 0 0 8px #8fc4ff; }
+.sk-pips i.r { box-shadow: 0 0 0 2px #ff9d4a, 0 0 8px #ff9d4a; }
+.sk-pips i.t { background: #333; border-color: #555; opacity: .6; }
+.sk-lines { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.sk-line { font-size: clamp(11px, 1.15vw, 14px); padding: 3px 12px 3px 10px; background: linear-gradient(90deg, rgba(0, 0, 0, .78), rgba(0, 0, 0, .45));
+  border-left: 2px solid #7dff9a; white-space: nowrap; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; opacity: 0; transform: translateX(-16px);
+  animation: lineIn calc(.25s * var(--spd)) ease-out forwards; }
+@keyframes lineIn { to { opacity: 1; transform: none; } }
+.arena:not(.big) .sk-line { font-size: 10px; padding: 1px 8px; }
+.arena:not(.big) .sk-lines { display: none; }
+.skill.win .sk-name { filter: brightness(1.15); box-shadow: 0 0 26px #ffd23f; }
+.skill.lose { opacity: .45 !important; filter: grayscale(.6); }
+.skill.lose .sk-pow { text-decoration: line-through; }
+
+/* 충돌 섬광 */
+.impact { position: absolute; left: 50%; top: 55%; width: 10px; height: 10px; transform: translate(-50%, -50%) scale(0); border-radius: 50%; z-index: 4; pointer-events: none;
+  background: radial-gradient(circle, #fff 0%, #fff3c9 25%, #ffb02e 45%, transparent 70%); }
+.impact.on-def { left: 68%; }
+.impact.show { animation: spark calc(.5s * var(--spd)) ease-out forwards; }
+.impact.block { background: radial-gradient(circle, #fff 0%, #a8d4ff 30%, #59a8ff 50%, transparent 70%); }
+@keyframes spark {
+  0% { transform: translate(-50%, -50%) scale(0); opacity: 1; }
+  30% { transform: translate(-50%, -50%) scale(16); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(24); opacity: 0; }
+}
+
+/* 금색 지그재그 선 */
+.burst { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 5; pointer-events: none; opacity: 0; }
+.burst polyline, .burst line { fill: none; stroke: #ffe7a8; stroke-width: .35; vector-effect: non-scaling-stroke; stroke-width: 2; filter: drop-shadow(0 0 3px #ffd23f);
+  stroke-dasharray: 400; stroke-dashoffset: 400; }
+.burst .vline { stroke-width: 1.5; opacity: .7; }
+.arena.burst-on .burst { animation: burstFade calc(1.1s * var(--spd)) ease-out forwards; }
+.arena.burst-on .burst polyline, .arena.burst-on .burst line { animation: draw calc(.45s * var(--spd)) ease-out forwards; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes burstFade { 0% { opacity: 1; } 70% { opacity: .8; } 100% { opacity: 0; } }
+
+/* 사선 레터박스 + 금빛 테두리 */
+.lbox { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 7; pointer-events: none; }
+.lbox .lb-fill { fill: #000; opacity: .88; }
+.lbox .lb-gold { fill: none; stroke: url(#lbGold); stroke-width: 7; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 6px #ffcf7a); stroke-linecap: round; }
+.lbox .lb-gold.thin { stroke-width: 2; opacity: .8; }
+.arena:not(.big) .lbox .lb-gold { stroke-width: 3; }
+.arena:not(.big) .lbox .lb-gold.thin { stroke-width: 1; }
+
+/* TOTAL 피해 */
+.total { position: absolute; left: 3%; bottom: 4%; z-index: 8; display: flex; align-items: flex-end; gap: 6px; transform: rotate(-8deg); transform-origin: left bottom; }
+.total.none { display: none; }
+.total small { font-family: 'Noto Serif KR', serif; font-weight: 900; font-size: clamp(11px, 1.3vw, 18px); letter-spacing: .1em; color: #ffe7a8; margin-bottom: .6em; }
+.total b { font-family: 'Noto Serif KR', serif; font-weight: 900; font-style: italic; font-size: clamp(34px, 7vw, 96px); line-height: .9;
+  background: linear-gradient(180deg, #fff8dc, #ffd23f 55%, #b8862f); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 3px 0 #3a2a10) drop-shadow(0 0 12px #ffb02e88); }
+.arena:not(.big) .total b { font-size: 34px; }
+
+/* 순서 사슬 */
+.chain { position: absolute; left: 50%; bottom: 3%; transform: translateX(-50%); z-index: 8; display: flex; align-items: center; }
+.chain .ch { width: clamp(34px, 4.2vw, 56px); aspect-ratio: 1; display: inline-flex; clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0 50%);
+  background: #2a2630; padding: 3px; }
+.chain .ch .char-svg { border-radius: 0; background: #141218; clip-path: inherit; }
+.chain .ch.atk { background: linear-gradient(135deg, #fff3c9, #ffb02e); transform: scale(1.18); }
+.chain .ch.def { background: linear-gradient(135deg, #ffb4a8, #e0433b); }
+.chain .ch.dead { filter: grayscale(1); opacity: .4; }
+.chain .link { width: clamp(10px, 1.6vw, 24px); height: 4px; background: repeating-linear-gradient(90deg, #e0603b 0 5px, transparent 5px 8px); }
+.arena:not(.big) .chain { display: none; }
+
+/* 상단 정보 / 결과 문구 */
+.who { position: absolute; top: 2.5%; left: 50%; transform: translateX(-50%); z-index: 8; font-size: clamp(11px, 1.2vw, 14px); color: #d9cfe0; letter-spacing: .05em;
+  text-shadow: 0 1px 3px #000; white-space: nowrap; }
+.clash-banner { position: absolute; left: 0; right: 0; top: 40%; text-align: center; font-family: 'Noto Serif KR', serif; font-weight: 900; z-index: 9;
+  font-size: clamp(20px, 3.6vw, 48px); color: #ffe7a8; opacity: 0; transform: scale(1.6); letter-spacing: .05em;
+  transition: opacity calc(.18s * var(--spd)), transform calc(.18s * var(--spd)); text-shadow: 0 0 18px #ffb02e, 0 3px 0 #3a2a10; pointer-events: none; }
+.clash-banner.show { opacity: 1; transform: scale(1); }
+.skip { position: absolute; right: 2%; bottom: 2%; z-index: 9; font-size: 11px; color: #ffffff66; }
+
+@media (max-width: 760px) {
+  .arena { height: 230px; }
+  .fighter { width: 96px; }
+  .arena:not(.big) .f-body { width: 78px; }
+  .fighter.lunge.left { left: 22%; }
+  .fighter.lunge.right { right: 22%; }
+  .fighter.strike.left { left: 36%; }
+  .fighter.strike.right { right: 36%; }
+  .arena.big .fighter { width: min(30vw, 38vh); }
+  .arena.big .sk-lines { display: none; }
+  .sk-name { max-width: 60vw; }
+  .who { display: none; }
+}
+
+/* ---------- 꾸미기 화면 ---------- */
+#charedit { flex-direction: column; min-height: 100vh; max-width: 1100px; margin: 0 auto; padding: 0 12px 24px; }
+.ce-wrap { display: grid; grid-template-columns: 340px 1fr; gap: 16px; margin-top: 14px; }
+.ce-left { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.ce-stage { height: 280px; display: flex; align-items: flex-end; justify-content: center; position: relative;
+  background: radial-gradient(circle at 50% 70%, var(--stage-glow), var(--bg2) 70%); border-radius: 10px; }
+.ce-stage .ce-fighter { position: relative; width: 180px; bottom: 6px; --spd: 1; }
+.ce-stage .ce-fighter .f-body { width: 170px; max-height: none; }
+.ce-fighter .f-name { font-size: 13px; font-weight: 700; }
+.ce-fighter.swing .arm-front { animation: swing .5s ease-out infinite alternate; }
+.ce-fighter.hurt .f-body { animation: hurt .6s ease-out infinite alternate; }
+.ce-fighter.guard .arm-front { transform: rotate(-20deg) translateX(-6px); }
+.ce-poses { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+.btn.on { border-color: var(--gold); background: var(--ws-cur); }
+.ce-portrait { display: flex; align-items: center; gap: 10px; justify-content: center; }
+.ce-portrait .char-svg { width: 56px; height: 56px; border-radius: 50%; background: var(--bg2); border: 1px solid var(--line); }
+.ce-actions { display: flex; gap: 8px; justify-content: center; }
+.ce-form { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ce-row { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+.ce-label { width: 80px; font-size: 13px; font-weight: 700; padding-top: 6px; }
+.ce-opts { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.swatch { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--line); cursor: pointer; padding: 0; position: relative; }
+.swatch.on { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold); }
+.swatch.custom { display: inline-flex; align-items: center; justify-content: center; background: var(--bg2); font-size: 14px; overflow: hidden; }
+.swatch.custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+@media (max-width: 760px) {
+  .ce-wrap { grid-template-columns: 1fr; }
+  .ce-label { width: 100%; padding-top: 0; }
+}
+
+/* ---------- 수비 스킬 (가드 / 회피 / 반격) ---------- */
+.sk-kind { display: inline-block; font-size: .6em; font-weight: 900; padding: 1px 6px; margin-right: 8px; vertical-align: middle;
+  background: rgba(0, 0, 0, .35); color: #fff; letter-spacing: .05em; }
+.sk-d.k-clash .sk-name { background: linear-gradient(270deg, #ff8a5a, #e0433b 70%, #a8231d); }
+.sk-d.k-clash .sk-badge.def { background: radial-gradient(circle at 40% 35%, #ffe0d2, #ff8a5a 45%, #a8231d); }
+.sk-d.k-clash .sk-pips i { border-color: #ff8a5a; } .sk-d.k-clash .sk-pips i.h { background: #ff8a5a; box-shadow: 0 0 8px #ff8a5a; }
+.sk-d.k-evade .sk-name { background: linear-gradient(270deg, #7dffd2, #2fb8a0 70%, #1d7a6b); }
+.sk-d.k-evade .sk-badge.def { background: radial-gradient(circle at 40% 35%, #e0fff6, #7dffd2 45%, #1d7a6b); }
+.sk-d.k-evade .sk-pips i { border-color: #7dffd2; } .sk-d.k-evade .sk-pips i.h { background: #7dffd2; box-shadow: 0 0 8px #7dffd2; }
+.sk-d.k-counter .sk-name { background: linear-gradient(270deg, #ff9ad2, #c8306a 70%, #7a1a40); }
+.sk-d.k-counter .sk-badge.def { background: radial-gradient(circle at 40% 35%, #ffe0f0, #ff9ad2 45%, #7a1a40); }
+.sk-d.k-counter .sk-pips i { border-color: #ff9ad2; } .sk-d.k-counter .sk-pips i.h { background: #ff9ad2; box-shadow: 0 0 8px #ff9ad2; }
+/* 회피: 옆으로 빠지며 잔상 */
+.fighter.evade.right { right: 1%; }
+.fighter.evade .f-body { animation: evade calc(.4s * var(--spd)) ease-out forwards; }
+@keyframes evade {
+  0% { transform: scaleX(-1); opacity: 1; filter: none; }
+  40% { transform: scaleX(-1) translate(-30px, -18px) rotate(-10deg); opacity: .45; filter: blur(2px) drop-shadow(-14px 0 0 #7dffd255); }
+  100% { transform: scaleX(-1) translate(-18px, 0) rotate(-4deg); opacity: 1; filter: none; }
+}
+
+/* 수비 카드 숫자 색 */
+.c-stat.def.k-evade { color: #2fb8a0; }
+.c-stat.def.k-counter { color: #c8306a; }
+html[data-theme="light"] .c-stat.def.k-evade { color: #1d7a6b; }
+html[data-theme="light"] .c-stat.def.k-counter { color: #a8204f; }
+
+/* ---------- 캐릭터 발 밑 정보 (림버스식: 잘린 원형 HP 게이지 + 흐트러짐 호 / HP 숫자 + 정신력 / 키워드) ---------- */
+.f-fig { position: relative; width: 100%; display: flex; justify-content: center; }
+.f-fig .f-body { position: relative; z-index: 1; }
+.f-fig.flash .f-body svg { animation: hitflash calc(.28s * var(--spd)) ease-out; }
+@keyframes hitflash { 0% { filter: brightness(3) saturate(0); } 100% { filter: none; } }
+.ff-base { position: absolute; left: 50%; bottom: 1%; width: 70%; aspect-ratio: 4 / 1; transform: translateX(-50%); border-radius: 50%; z-index: 0; pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(110, 182, 255, .3), rgba(110, 182, 255, .06) 60%, transparent 72%); }
+.ff-base.t-foe { background: radial-gradient(ellipse at center, rgba(255, 90, 74, .3), rgba(255, 90, 74, .06) 60%, transparent 72%); }
+
+/* 발 밑 잘린 원형 게이지 (HP + 흐트러짐) */
+.ff-ring { position: absolute; left: 50%; bottom: -7%; width: 96%; aspect-ratio: 200 / 56; transform: translateX(-50%); z-index: 2; overflow: visible; pointer-events: none; }
+.ff-ring path { fill: none; stroke-linecap: butt; vector-effect: non-scaling-stroke; }
+.ff-ring .trk { stroke: rgba(0, 0, 0, .72); stroke-width: 9; }
+.ff-ring .hp { stroke: #ff4d3d; stroke-width: 5; filter: drop-shadow(0 0 4px rgba(255, 50, 30, .8)); transition: stroke-dasharray .08s; }
+.ff-ring.t-me .hp { stroke: #ff5a48; }
+.ff-ring .seg { stroke: rgba(0, 0, 0, .8); stroke-width: 6; stroke-dasharray: .5 9.5; stroke-dashoffset: -9.75; }
+.ff-ring .trk.s { stroke-width: 5; stroke: rgba(0, 0, 0, .6); }
+.ff-ring .stg { stroke: #ffd23f; stroke-width: 2.5; filter: drop-shadow(0 0 3px rgba(255, 210, 63, .8)); }
+.ff-ring .stg.broken { stroke: #ff3b30; animation: alarmbar .5s steps(2) infinite; }
+@keyframes alarmbar { 50% { opacity: .3; } }
+.arena:not(.big) .ff-ring .trk { stroke-width: 7; }
+.arena:not(.big) .ff-ring .hp { stroke-width: 4; }
+.arena:not(.big) .ff-ring .seg { stroke-width: 5; }
+.arena:not(.big) .ff-ring .trk.s { stroke-width: 4; }
+.arena:not(.big) .ff-ring .stg { stroke-width: 2; }
+
+.f-foot { display: flex; flex-direction: column; align-items: center; gap: 1px; margin-top: 8%; position: relative; z-index: 2; }
+.ff-row { display: flex; align-items: center; gap: 5px; line-height: 1; }
+.ff-hpn { font-family: 'Noto Serif KR', serif; font-weight: 900; font-size: clamp(16px, 2vw, 28px); line-height: 1; letter-spacing: -.02em;
+  color: #ff4d3d; text-shadow: 0 0 8px rgba(255, 40, 30, .7), 0 1px 0 #3a0806, 0 2px 3px #000; }
+.ff-hpn.hit { animation: hpflash calc(.25s * var(--spd)) ease-out; }
+@keyframes hpflash { 40% { color: #fff; transform: scale(1.18); } }
+.ff-sp { --spc: #96969e; min-width: clamp(20px, 2.2vw, 30px); height: clamp(20px, 2.2vw, 30px); padding: 0 3px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center;
+  border: 2px solid var(--spc); background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--spc) 30%, #111), #0a0a0c 75%);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--spc) 60%, transparent); }
+.ff-sp b { font-family: 'Noto Serif KR', serif; font-weight: 900; font-size: clamp(10px, 1.1vw, 14px); color: var(--spc); text-shadow: 0 1px 2px #000; filter: brightness(1.25); }
+.f-foot .f-status { margin-top: 2px; gap: 2px 6px; }
+.ff-name { font-size: clamp(10px, .95vw, 12px); font-weight: 700; color: #e8e2ee; text-shadow: 0 1px 3px #000, 0 0 6px #000; white-space: nowrap; opacity: .85; }
+.ff-name .stag { color: #ff6b5f; }
+
+.arena:not(.big) .f-fig .f-body { width: 92px; }
+.arena:not(.big) .ff-hpn { font-size: 16px; }
+.arena:not(.big) .ff-sp { min-width: 18px; height: 18px; border-width: 1.5px; }
+.arena:not(.big) .ff-sp b { font-size: 9px; }
+.arena:not(.big) .ff-name { font-size: 9px; }
+.arena:not(.big) .fighter { bottom: 4%; }
+
+/* ---------- 림버스식 합 ---------- */
+/* 자세: 가운데로 다가섬 → 부딪힘 → 밀려남 → 이긴 쪽 돌진 */
+.fighter.engage.left { left: 25%; } .fighter.engage.right { right: 25%; }
+.fighter.clinch.left { left: 31%; } .fighter.clinch.right { right: 31%; }
+.fighter.knock.left { left: 19%; } .fighter.knock.right { right: 19%; }
+.fighter.strike.left { left: 40%; z-index: 3; } .fighter.strike.right { right: 40%; z-index: 3; }
+.m-open .fighter.dash.left, .m-guard .fighter.dash.left, .m-evade .fighter.dash.left, .m-counter .fighter.dash.left, .m-nullify .fighter.dash.left { left: 46%; }
+.arena:not(.big) .fighter.dash.left { left: calc(86% - 2 * 128px); }
+.fighter.hurt.left { left: 8%; } .fighter.hurt.right { right: 8%; }
+.m-clash .fighter.hurt.left { left: 14%; } .m-clash .fighter.hurt.right { right: 14%; }
+.fighter.clinch .f-body { animation: none; transform: rotate(9deg) translateY(3px); }
+.fighter.clinch .f-body.flip { transform: scaleX(-1) rotate(9deg) translateY(3px); }
+.fighter.knock .f-body { animation: none; transform: rotate(-8deg); }
+.fighter.knock .f-body.flip { transform: scaleX(-1) rotate(-8deg); }
+.fighter.strike .f-body { animation: none; transform: rotate(10deg) translateY(2px); }
+.fighter.strike .f-body.flip { transform: scaleX(-1) rotate(10deg) translateY(2px); }
+.fighter.hurtanim .f-body { animation: hurt calc(.45s * var(--spd)) ease-out forwards; }
+.fighter.hurtanim .f-body.flip { animation-name: hurtflip; }
+
+/* 머리 위 스킬 띠: [위력 육각] [스킬 이름] + 코인 */
+.f-skill { position: absolute; bottom: calc(100% - 6px); left: 50%; z-index: 6; display: flex; flex-direction: column; gap: 3px; pointer-events: none;
+  opacity: 0; transition: opacity calc(.25s * var(--spd)), transform calc(.3s * var(--spd)); --sin: #e3b21d; --sin2: #5a4608; --sin3: #f4dc8a; }
+.f-skill.sk-a { align-items: flex-start; transform: translate(-72%, -10px); }
+.f-skill.sk-d { align-items: flex-end; transform: translate(-28%, -10px); }
+.arena.on .f-skill.sk-a { opacity: 1; transform: translate(-72%, 0); }
+.arena.on .f-skill.sk-d { opacity: 1; transform: translate(-28%, 0); }
+.f-skill .sk-row { display: flex; align-items: center; }
+.f-skill .sk-name { font-size: clamp(11px, 1.45vw, 19px); max-width: min(30vw, 300px); padding: 3px 18px 3px 14px; color: #fff; text-shadow: 0 1px 0 #000, 0 0 4px #000;
+  background: linear-gradient(90deg, var(--sin2), var(--sin) 55%, var(--sin2)); box-shadow: 0 0 14px color-mix(in srgb, var(--sin) 50%, transparent);
+  border-top: 1px solid var(--sin3); }
+.f-skill.sk-d .sk-name { padding: 3px 14px 3px 18px; background: linear-gradient(270deg, var(--sin2), var(--sin) 55%, var(--sin2)); }
+.f-skill .sk-badge { width: clamp(40px, 4.6vw, 64px); margin-left: -8px; background: radial-gradient(circle at 40% 35%, var(--sin3), var(--sin) 50%, var(--sin2)); }
+.f-skill.sk-a .sk-badge { margin-left: 0; margin-right: -8px; }
+.f-skill.sk-d .sk-badge { margin-left: -8px; margin-right: 0; }
+.f-skill .sk-badge::after { background: radial-gradient(circle at 50% 40%, #2a2420, #0c0a08); }
+.f-skill .sk-pow { font-size: clamp(18px, 2.4vw, 32px); text-shadow: 0 0 10px var(--sin3), 0 2px 2px #000; }
+.f-skill .sk-pips { gap: 4px; padding: 0 10px; }
+.f-skill .sk-pips i { width: clamp(9px, 1vw, 13px); height: clamp(9px, 1vw, 13px); border-color: #ffd23f; position: relative; }
+.f-skill .sk-pips i.h { background: #ffd23f; box-shadow: 0 0 8px #ffd23f; }
+.f-skill .sk-pips i.t { background: #2a2a2a; border-color: #777; opacity: .8; }
+.f-skill .sk-pips i.x { border-color: #5a2a26; background: transparent; opacity: .45; transform: scale(.8); box-shadow: none; }
+.f-skill .sk-pips i.x::before, .f-skill .sk-pips i.x::after { content: ''; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 2px; background: #c8402f; transform: translateX(-50%) rotate(45deg); }
+.f-skill .sk-pips i.x::after { transform: translateX(-50%) rotate(-45deg); }
+.f-skill .sk-pips i.brk { animation: coinbreak calc(.4s * var(--spd)) ease-out; }
+@keyframes coinbreak { 0% { transform: scale(1.8); opacity: 1; background: #fff; box-shadow: 0 0 16px #ff6a3d; } 100% { transform: scale(.8); opacity: .45; } }
+.f-skill.rwin .sk-badge { filter: brightness(1.4) drop-shadow(0 0 8px var(--sin3)); }
+.f-skill.win .sk-name { filter: brightness(1.2); box-shadow: 0 0 24px var(--sin3); }
+.f-skill.lose { opacity: .35 !important; filter: grayscale(.8); }
+.f-skill.lose .sk-pow { text-decoration: none; }
+/* 수비 스킬 띠 색 */
+.f-skill.k-guard { --sin: #4a7fd0; --sin2: #16284a; --sin3: #a8cfff; }
+.f-skill.k-nullify { --sin: #4a7fd0; --sin2: #16284a; --sin3: #e6f2ff; }
+.f-skill.k-evade { --sin: #2fb8a0; --sin2: #0d3a33; --sin3: #9dffe6; }
+.f-skill.k-counter { --sin: #c8306a; --sin2: #43102a; --sin3: #ffb0d6; }
+.f-skill.sk-d.k-clash .sk-name, .f-skill.sk-d.k-clash .sk-badge.def { background: none; }
+.f-skill.sk-d.k-clash .sk-name { background: linear-gradient(270deg, var(--sin2), var(--sin) 55%, var(--sin2)); }
+.f-skill.sk-d.k-clash .sk-badge.def { background: radial-gradient(circle at 40% 35%, var(--sin3), var(--sin) 50%, var(--sin2)); }
+.f-skill.sk-d .sk-pips i { border-color: #ffd23f; }
+.f-skill.sk-d .sk-pips i.h { background: #ffd23f; box-shadow: 0 0 8px #ffd23f; }
+.f-skill.sk-d .sk-pips i.x { border-color: #5a2a26; background: transparent; box-shadow: none; }
+.arena:not(.big) .f-skill .sk-name { font-size: 10px; padding: 2px 12px 2px 10px; max-width: 150px; }
+.arena:not(.big) .f-skill .sk-badge { width: 32px; }
+.arena:not(.big) .f-skill .sk-pow { font-size: 15px; }
+.arena:not(.big) .f-skill .sk-pips i { width: 7px; height: 7px; border-width: 1.5px; }
+
+/* 효과 목록 (왼쪽 위) */
+.sk-info { position: absolute; left: 3%; top: 7%; z-index: 9; margin: 0; pointer-events: none; }
+.sk-info .sk-line { font-size: clamp(10px, 1vw, 13px); }
+
+/* 합 횟수 */
+.clash-count { position: absolute; left: 50%; top: 22%; z-index: 6; transform: translateX(-50%) scale(.6); opacity: 0; display: flex; align-items: baseline; gap: 4px;
+  font-family: 'Noto Serif KR', serif; font-weight: 900; color: #fff3c9; text-shadow: 0 0 12px #ffb02e, 0 2px 0 #3a2a10; pointer-events: none; }
+.clash-count small { font-size: clamp(12px, 1.4vw, 18px); letter-spacing: .1em; }
+.clash-count b { font-size: clamp(26px, 3.6vw, 48px); font-style: italic; }
+.clash-count.show { animation: cntpop calc(.68s * var(--spd)) ease-out forwards; }
+@keyframes cntpop { 0% { opacity: 0; transform: translateX(-50%) scale(1.6); } 20% { opacity: 1; transform: translateX(-50%) scale(1); } 80% { opacity: 1; } 100% { opacity: .2; transform: translateX(-50%) scale(1); } }
+.arena:not(.big) .clash-count { top: 12%; }
+.m-clash .impact { top: 52%; }
+.impact.show { animation: spark calc(.42s * var(--spd)) ease-out forwards; }
+
+/* 피격 섬광 (맞는 캐릭터 몸 위) */
+.f-hit { position: absolute; left: 50%; top: 45%; width: 8px; height: 8px; border-radius: 50%; z-index: 3; pointer-events: none; transform: translate(-50%, -50%) scale(0);
+  background: radial-gradient(circle, #fff 0%, #ffe1c9 25%, #ff5a3d 50%, transparent 70%); }
+.f-hit.show { animation: spark calc(.36s * var(--spd)) ease-out forwards; }
+
+@media (max-width: 760px) {
+  .arena:not(.big) .f-fig .f-body { width: 66px; }
+  .arena:not(.big) .f-foot .f-status { display: none; }
+  .arena:not(.big) .ff-name { display: none; }
+  .fighter.engage.left { left: 12%; } .fighter.engage.right { right: 12%; }
+  .fighter.clinch.left { left: 19%; } .fighter.clinch.right { right: 19%; }
+  .fighter.knock.left { left: 7%; } .fighter.knock.right { right: 7%; }
+  .fighter.strike.left { left: 30%; } .fighter.strike.right { right: 30%; }
+  .m-clash .fighter.hurt.left { left: 3%; } .m-clash .fighter.hurt.right { right: 3%; }
+  .arena:not(.big) .fighter.dash.left { left: calc(86% - 2 * 96px); }
+  .f-skill .sk-name { max-width: 34vw; }
+  .arena.big .fighter { width: min(24vw, 30vh); }
+  .arena.on .f-skill.sk-a { transform: translate(-45%, 0); }
+  .arena.on .f-skill.sk-d { transform: translate(-58%, 0); }
+  .sk-info { display: none; }
+}

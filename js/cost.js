@@ -30,6 +30,13 @@ function effectValue(e) {
       case 'draw': v = (toEnemy ? -2 : 4) * pot; break;
       case 'cure': v = toEnemy ? -4 : 4; break;
       case 'chargeBoost': v = pot * 0.4; break;
+      case 'pwrOneSided': case 'pwrClash': v = pot * 0.3; break;
+      case 'pwrIfKw': case 'pwrHighSp': v = pot * 0.25; break;
+      case 'pwrLowHp': v = pot * 0.2; break;
+      case 'reuse': v = Math.max(1, cnt) * 1.2; break;
+      case 'kwBurst': v = toEnemy ? 4 : -4; break;
+      case 'breakArmor': v = toEnemy ? 6 : -6; break;
+      case 'stealWon': v = toEnemy ? pot * 0.4 : 0; break;
       default: v = 0;
     }
   }
@@ -56,7 +63,8 @@ function cardValue(c) {
     if (c.plus) v += 1.5;
   } else if (c.type === 'armor') {
     const extra = Array.isArray(c.coins) ? coinValue(c.coins) : 0;
-    v = c.def * 0.9 + extra + eff;
+    const kind = c.kind === 'evade' || c.kind === 'counter' ? c.kind : 'guard';
+    v = c.def * { guard: 0.9, evade: 1, counter: 1.15 }[kind] + extra + eff;
     if (c.attr === 'all') v *= 1.3;
     if (fx.includes('reflect')) v += 4;
     if (fx.includes('nullify')) v += 15;

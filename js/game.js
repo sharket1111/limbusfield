@@ -37,6 +37,7 @@ const G = {
   defs: {},               // 카드 id → 정의
   sel: { main: null, plus: [], target: null, goods: null },
   humanResolve: null,
+  defendReq: null,
   acting: false,
   hover: null,
 };
@@ -67,7 +68,7 @@ function ensureImgStyle(c) {
   let el = document.getElementById('card-imgs');
   if (!el) { el = document.createElement('style'); el.id = 'card-imgs'; document.head.appendChild(el); }
   el.textContent = [...IMG_RULES].map(([id, img]) =>
-    `.cimg-${id}{background-image:linear-gradient(180deg,rgba(10,8,12,.55),rgba(10,8,12,.15) 40%,rgba(10,8,12,.9) 72%),url("${img}")}`).join('\n');
+    `.cimg-${id}{background-image:linear-gradient(180deg,rgba(10,8,12,0) 55%,rgba(10,8,12,.85) 100%),url("${img}")}`).join('\n');
 }
 function registerDefs(list) {
   for (const c of list) { G.defs[c.id] = c; ensureImgStyle(c); }
@@ -156,7 +157,7 @@ function nightEvent(p) {
     changeSp(p, -5, true);
   } else {
     const [what, amt] = pick(ev.gains);
-    const label = { hp: `HP +${amt}`, sp: `정신력 +${amt}`, won: `+${amt}원` }[what];
+    const label = { hp: `HP +${amt}`, sp: `정신력 +${amt}`, won: `+${amt}안` }[what];
     showEvent(p, ev, `<span class="pos">${label}</span>`);
     log(`${ev.icon} ${pname(p)} 이(가) <b>${ev.name}</b>을(를) 주웠습니다 (${label})`);
     toastTo(p, `${ev.icon} 연료통! ${label}`);
@@ -262,6 +263,7 @@ function clearStageLocal(text) {
 }
 function setNight(on) {
   document.body.classList.toggle('night', on);
+  if (typeof updateFrameClock === 'function') updateFrameClock();
   netFx('night', { on });
 }
 
@@ -304,7 +306,7 @@ function gainWon(p, n) {
   const before = p.won;
   p.won = Math.max(0, Math.min(RULES.maxWon, p.won + n));
   const got = p.won - before;
-  if (got > 0) floatText(p, `+${got}원`, 'won');
+  if (got > 0) floatText(p, `+${got}안`, 'won');
   return got;
 }
 
@@ -325,10 +327,10 @@ function pay(payer, receiver, amount) {
     damage(payer, fromHp, '', receiver);
   }
   if (fromWon > 0) {
-    floatText(payer, `-${fromWon}원`, 'spdown');
+    floatText(payer, `-${fromWon}안`, 'spdown');
     gainWon(receiver, fromWon);
   }
-  const parts = [`${fromWon}원`];
+  const parts = [`${fromWon}안`];
   if (fromSp) parts.push(`정신력 ${fromSp}`);
   if (fromHp) parts.push(`<span class="neg">HP ${fromHp}</span>`);
   return parts.join(' + ');
@@ -362,9 +364,9 @@ function staggerDamage(p, n) {
   p.stg = Math.max(0, p.stg - n);
   if (p.stg === 0) {
     addStatus(p, 'staggered', 0, 1, true);
-    log(`💢 ${pname(p)} <b class="neg">흐트러짐!</b> 다음 턴을 쉬고, 방어할 수 없으며, 받는 피해 ${RULES.staggerMult}배`);
+    log(`💢 ${pname(p)} <b class="neg">흐트러짐!</b> 다음 턴을 쉬고, 대응할 수 없으며, 받는 피해 ${RULES.staggerMult}배`);
     floatText(p, '흐트러짐!', 'dmg');
-    toastTo(p, '💢 흐트러짐! 다음 턴을 쉬고 방어할 수 없습니다', 'bad');
+    toastTo(p, '💢 흐트러짐! 다음 턴을 쉬고 대응할 수 없습니다', 'bad');
   }
 }
 
@@ -375,15 +377,56 @@ function headChance(sp) {
 
 const defaultCoins = () => Array.from({ length: RULES.coins }, () => ({ power: RULES.coinPower, fx: [] }));
 
-// 코인 목록을 던져 [{ coin, head, power }] 반환
-function rollCoins(p, coins) {
-  const chance = headChance(p.sp);
-  return coins.map((coin) => ({ coin, head: Math.random() < chance, power: coin.power }));
+// 코인 목록을 던져 [{ coin, head, power, reused }] 반환
+// 재사용 코인: 앞면이면 같은 코인을 다시 던지고, 앞면이 나올 때마다 위력이 한 번 더 더해짐
+function rollWith(coins, chance, rnd = Math.random) {
+  return coins.map((coin) => {
+    const head = rnd() < chance;
+    let power = coin.power, reused = 0;
+    if (head && coin.reuse) {
+      while (reused < coin.reuse && rnd() < chance) { power += coin.power; reused++; }
+    }
+    return { coin, head, power, reused };
+  });
 }
+const rollCoins = (p, coins) => rollWith(coins, headChance(p.sp));
 const coinSum = (rolls) => rolls.reduce((s, r) => s + (r.head ? r.power : 0), 0);
 
+// 림버스식 합: 남은 코인을 매번 다시 던져 위력을 비교하고, 진 쪽은 마지막 코인 1개가 깨짐
+//  마지막 코인까지 깨진 쪽이 합에서 짐 (무승부는 코인 유지, 최대 횟수를 넘기면 상쇄)
+//  반환: { rounds: [{ a, d, pa, pd, w }], winner: 'a' | 'd' | 't', aLeft, dLeft }
+function runClash(aBase, aCoins, chA, dBase, dCoins, chD, rnd = Math.random) {
+  let aLeft = aCoins.slice(), dLeft = dCoins.slice();
+  const rounds = [];
+  for (let i = 0; i < RULES.clashMaxRounds; i++) {
+    const a = rollWith(aLeft, chA, rnd), d = rollWith(dLeft, chD, rnd);
+    const pa = aBase + coinSum(a), pd = dBase + coinSum(d);
+    const w = pa > pd ? 'a' : pd > pa ? 'd' : 't';
+    rounds.push({ a, d, pa, pd, w });
+    if (w === 'a') { dLeft = dLeft.slice(0, -1); if (!dLeft.length) return { rounds, winner: 'a', aLeft, dLeft }; }
+    if (w === 'd') { aLeft = aLeft.slice(0, -1); if (!aLeft.length) return { rounds, winner: 'd', aLeft, dLeft }; }
+  }
+  return { rounds, winner: 't', aLeft, dLeft };
+}
+
+// 합 결과 예측 (몬테카를로, 고정 시드라 화면이 흔들리지 않음) — 방어자 기준
+//  win/tie/lose 확률, exp: 받는 피해 기대값, expD: 주는 피해 기대값, max: 받는 최대 피해
+function clashSim(aBase, aCoins, spA, dBase, dCoins, spD, n = 400) {
+  const rnd = seededRng(7919);
+  const chA = headChance(spA), chD = headChance(spD);
+  let win = 0, tie = 0, lose = 0, exp = 0, expD = 0, max = 0, rounds = 0;
+  for (let i = 0; i < n; i++) {
+    const r = runClash(aBase, aCoins, chA, dBase, dCoins, chD, rnd);
+    rounds += r.rounds.length;
+    if (r.winner === 'a') { const dmg = aBase + coinSum(rollWith(r.aLeft, chA, rnd)); lose++; exp += dmg; max = Math.max(max, dmg); }
+    else if (r.winner === 'd') { win++; expD += dBase + coinSum(rollWith(r.dLeft, chD, rnd)); }
+    else tie++;
+  }
+  return { win: win / n, tie: tie / n, lose: lose / n, exp: exp / n, expD: expD / n, max, rounds: rounds / n };
+}
+
 function coinsHTML(rolls) {
-  return rolls.map((r) => `<span class="coin ${r.head ? 'head' : 'tail'}" title="코인 위력 ${r.power}">${r.head ? r.power : '○'}</span>`).join('');
+  return rolls.map((r) => `<span class="coin ${r.head ? 'head' : 'tail'}${r.reused ? ' reuse' : ''}" title="코인 위력 ${r.coin.power}${r.reused ? ` · 재사용 ${r.reused}회` : ''}">${r.head ? r.power + (r.reused ? '↻' : '') : '○'}</span>`).join('');
 }
 
 // 위력 분포: 기본값 + 코인들(각자 위력)의 앞면 합
@@ -404,14 +447,16 @@ function powerDist(base, coins, chance) {
 function clashStats(atkBase, atkCoins, spA, defBase, defCoins, spD, useArmor) {
   const A = powerDist(atkBase, atkCoins, headChance(spA));
   const D = useArmor ? powerDist(defBase, defCoins, headChance(spD)) : new Map([[0, 1]]);
-  let win = 0, tie = 0, lose = 0, exp = 0, max = 0;
+  let win = 0, tie = 0, lose = 0, exp = 0, max = 0, expD = 0, expA = 0;
   for (const [a, pa] of A) for (const [d, pd] of D) {
     const pr = pa * pd;
-    if (d > a) win += pr;
+    expA += pr * a;
+    if (d > a) { win += pr; expD += pr * (d - a); }
     else if (d === a) tie += pr;
     else { lose += pr; exp += pr * (a - d); max = Math.max(max, a - d); }
   }
-  return { win, tie, lose, exp, max };
+  // exp: 공격자가 이겼을 때 차이의 기대값, expD: 방어자가 이겼을 때 차이의 기대값, expA: 공격 위력 기대값
+  return { win, tie, lose, exp, max, expD, expA };
 }
 
 // ------------------------------------------------------------
@@ -435,12 +480,19 @@ function buildAttack(cards) {
   return { atk, attr: main.attr, fx: [...fx], effects, coins, coinMax, cards, name: cards.map((c) => c.name).join(' + ') };
 }
 
-// 방어 코인: 기본 코인 + 방어구의 커스텀 코인
+// 수비 코인
+//  가드: 기본 코인 + 가드 카드들의 커스텀 코인
+//  회피·반격: 카드의 커스텀 코인(없으면 기본 코인)
 function defenseCoins(armors) {
+  if (armors.length === 1 && armors[0].kind !== 'guard') {
+    return Array.isArray(armors[0].coins) && armors[0].coins.length ? armors[0].coins.map((x) => ({ ...x })) : defaultCoins();
+  }
   let coins = defaultCoins();
   for (const a of armors) if (Array.isArray(a.coins)) coins = coins.concat(a.coins.map((x) => ({ ...x })));
   return coins;
 }
+const DEF_KIND = { guard: '가드', evade: '회피', counter: '반격' };
+const defKind = (c) => (c && DEF_KIND[c.kind] ? c.kind : 'guard');
 
 function armorMatches(armor, attr) {
   return armor.attr === 'all' || armor.attr === attr;
@@ -495,34 +547,76 @@ async function performAttack(attacker, cards, targets) {
   renderAll();
 }
 
-// 충전 소모 효과를 적용한 이번 공격의 코인
-function prepareCoins(p, coins) {
-  return coins.map((c) => {
-    let power = c.power;
+// 던지기 전 효과(조건부 위력, 충전 소모, 재사용)를 적용한 이번 합의 코인
+// ctx: { foe: 상대, clash: 합 중인지 }
+function prepareCoins(p, coins, ctx = {}) {
+  const boosts = [];
+  const out = coins.map((c) => {
+    let power = c.power, reuse = 0;
     for (const e of c.fx || []) {
+      const pot = e.pot || 0;
+      let why = '';
       if (e.key === 'chargeBoost' && p.status.charge.cnt >= (e.cnt || 0)) {
         useCount(p, 'charge', e.cnt || 0);
-        power += e.pot || 0;
-        log(`${pname(p)} ⚡ 충전 ${e.cnt} 소모 — 코인 위력 +${e.pot}`);
-      }
+        why = `⚡ 충전 ${e.cnt} 소모`;
+      } else if (e.key === 'pwrOneSided' && !ctx.clash) why = '일방 공격';
+      else if (e.key === 'pwrClash' && ctx.clash) why = '합';
+      else if (e.key === 'pwrIfKw' && ctx.foe && has(ctx.foe, e.kw)) why = `상대 ${kwName(e.kw)}`;
+      else if (e.key === 'pwrLowHp' && p.hp <= RULES.maxHp / 2) why = '빈사';
+      else if (e.key === 'pwrHighSp' && p.sp >= (e.cnt || 0)) why = `정신력 ${e.cnt} 이상`;
+      else if (e.key === 'reuse') reuse += e.cnt || 1;
+      if (why) { power += pot; boosts.push(`${why} +${pot}`); }
     }
-    return { ...c, power };
+    return { ...c, power, reuse };
   });
+  if (boosts.length) log(`${pname(p)} 🪙 코인 강화: ${boosts.join(', ')}`);
+  return out;
 }
 
-// 방어 선택: 조작 방식에 따라
-async function defendFor(p, attacker, info) {
-  if (info.fx.includes('pierce')) return [];
-  if (has(p, 'staggered')) {
-    log(`${pname(p)} 💢 흐트러져서 방어할 수 없습니다`);
-    return [];
+// 공격받았을 때의 대응 선택 — { mode: none|clash|guard|evade|counter, cards: [...] }
+//  clash  : 무기 1장(+보조 무기) — 속성 제한 없음
+//  guard  : 가드 카드 여러 장 (관통이면 불가)
+//  evade / counter : 해당 카드 1장
+//  수비 카드는 공격과 같은 속성이거나 전속성이어야 함
+function validDefense(p, info, resp) {
+  const none = { mode: 'none', cards: [] };
+  if (!resp || !Array.isArray(resp.cards)) return none;
+  const uniq = resp.cards.filter((c, i, arr) => c && arr.indexOf(c) === i && p.hand.includes(c));
+  if (!uniq.length) return none;
+  if (resp.mode === 'clash') {
+    const [main, ...rest] = uniq;
+    if (!main || main.type !== 'weapon') return none;
+    return { mode: 'clash', cards: [main, ...rest.filter((c) => c.type === 'weapon' && c.plus)] };
   }
-  let armors;
-  if (p.ctrl === 'local') armors = await humanDefend(p, attacker, info);
-  else if (p.ctrl === 'remote') armors = await Net.askDefend(p, attacker, info);
-  else armors = cpuDefend(p, info, attacker);
-  // 검증: 손에 있고, 속성이 맞는 방어구만
-  return (armors || []).filter((c, i, arr) => c && arr.indexOf(c) === i && p.hand.includes(c) && c.type === 'armor' && armorMatches(c, info.attr));
+  const ok = (c) => c.type === 'armor' && armorMatches(c, info.attr);
+  if (resp.mode === 'guard') {
+    if (info.fx.includes('pierce')) return none;
+    const g = uniq.filter((c) => ok(c) && defKind(c) === 'guard');
+    return g.length ? { mode: 'guard', cards: g } : none;
+  }
+  if (resp.mode === 'evade' || resp.mode === 'counter') {
+    const c = uniq.find((x) => ok(x) && defKind(x) === resp.mode);
+    return c ? { mode: resp.mode, cards: [c] } : none;
+  }
+  return none;
+}
+
+async function defendFor(p, attacker, info) {
+  if (has(p, 'staggered')) {
+    log(`${pname(p)} 💢 흐트러져서 대응할 수 없습니다`);
+    return { mode: 'none', cards: [] };
+  }
+  let resp;
+  if (p.ctrl === 'local') resp = await humanDefend(p, attacker, info);
+  else if (p.ctrl === 'remote') resp = await Net.askDefend(p, attacker, info);
+  else resp = cpuDefend(p, info, attacker);
+  return validDefense(p, info, resp);
+}
+
+// 반격·회피 카드로 만드는 "공격 정보" (반격 피해와 효과 적용용)
+function defenseInfo(card, power) {
+  return { atk: power, attr: card.attr === 'all' ? 'phys' : card.attr, fx: fxOf(card).filter((f) => !['reflect', 'nullify'].includes(f)),
+    effects: (card.effects || []).filter((e) => e.when === 'hit'), coins: [], coinMax: 0, cards: [card], name: card.name };
 }
 
 async function resolveHit(attacker, target, info) {
@@ -531,92 +625,148 @@ async function resolveHit(attacker, target, info) {
   if (!target.alive) return;
 
   const pierce = info.fx.includes('pierce');
-  const armors = await defendFor(target, attacker, info);
-  for (const ar of armors) discardCard(target, ar);
-  for (const ar of armors) applyEffects((ar.effects || []).filter((e) => e.when === 'use'), target, attacker);
+  const resp = await defendFor(target, attacker, info);
+  const dcards = resp.cards;
+  for (const c of dcards) discardCard(target, c);
+  if (resp.mode !== 'clash') for (const c of dcards) applyEffects((c.effects || []).filter((e) => e.when === 'use'), target, attacker);
 
-  // 무효화: 합 없이 막음
-  if (armors.some((x) => hasFx(x, 'nullify'))) {
-    showClash(attacker, info, null, null, target, armors, null, null, 'nullify');
-    log(`${pname(target)} ${armors.map(cname).join(' + ')} 🛑 공격을 무효화했습니다!`);
+  // 무효화 가드
+  if (resp.mode === 'guard' && dcards.some((x) => hasFx(x, 'nullify'))) {
+    const ms = showClash(attacker, info, null, null, target, dcards, null, null, 'nullify', 'nullify', 0, '');
+    log(`${pname(target)} ${dcards.map(cname).join(' + ')} 🛑 공격을 무효화했습니다!`);
+    renderAll();
+    await sleep(ms);
     floatText(target, '무효', 'block');
     changeSp(target, 5, true);
     changeSp(attacker, -3, true);
     renderAll();
-    await sleep(900);
     return;
   }
 
-  const ca = rollCoins(attacker, prepareCoins(attacker, info.coins));
+  // ---- 합: 무기 vs 무기 (림버스식 — 코인을 하나씩 깨뜨림) ----
+  if (resp.mode === 'clash') {
+    const dinfo = buildAttack(dcards);
+    const aCoins = prepareCoins(attacker, info.coins, { foe: target, clash: true });
+    const dCoins = prepareCoins(target, dinfo.coins, { foe: attacker, clash: true });
+    const cl = runClash(info.atk, aCoins, headChance(attacker.sp), dinfo.atk, dCoins, headChance(target.sp));
+    const result = cl.winner === 'a' ? 'atk' : cl.winner === 'd' ? 'def' : 'tie';
+    const W = cl.winner === 'a' ? attacker : target, L = cl.winner === 'a' ? target : attacker;
+    const winfo = cl.winner === 'a' ? info : dinfo;
+    let strike = [], dmg = 0;
+    if (cl.winner !== 't') {
+      strike = rollCoins(W, cl.winner === 'a' ? cl.aLeft : cl.dLeft);
+      dmg = winfo.atk + coinSum(strike);
+    }
+    const last = cl.rounds[cl.rounds.length - 1];
+    const ms = showClash(attacker, info, last.a, last.pa, target, dcards, last.d, last.pd, 'clash', result, dmg,
+      result === 'atk' ? 'd' : result === 'def' ? 'a' : '', dinfo.atk,
+      { aN: aCoins.length, dN: dCoins.length, rounds: cl.rounds, strike: { s: cl.winner, coins: strike } });
+    log(`⚔ 합 ×${cl.rounds.length}! ${pname(attacker)} vs ${pname(target)} ${dcards.map(cname).join(' + ')} — ${cl.rounds.map((r) => `<b class="${r.w === 'a' ? 'neg' : r.w === 'd' ? 'pos' : ''}">${r.pa}:${r.pd}</b>`).join(' · ')}`);
+    renderAll();
+    await sleep(ms);
+    if (cl.winner === 't') {
+      log('합 무승부 — 두 공격이 상쇄되었습니다.');
+      floatText(target, '상쇄', 'block');
+      return;
+    }
+    log(`${pname(W)} 합 승리! 남은 코인 ${strike.length}개로 위력 <b>${dmg}</b> ${coinsHTML(strike)}`);
+    changeSp(W, 5, true); changeSp(L, -5, true);
+    landHit(W, L, dmg, winfo, strike);
+    return;
+  }
+
+  const contested = resp.mode !== 'none';
+  const ca = rollCoins(attacker, prepareCoins(attacker, info.coins, { foe: target, clash: contested }));
   const pa = info.atk + coinSum(ca);
 
-  if (!armors.length) {
-    showClash(attacker, info, ca, pa, target, [], null, null, 'open');
+  // 무방비
+  if (!contested) {
+    const ms = showClash(attacker, info, ca, pa, target, [], null, null, 'open', 'open', pa, 'd');
     log(`${pname(attacker)} 위력 <b>${pa}</b> ${coinsHTML(ca)} → ${pname(target)} 무방비${pierce ? ' (관통)' : ''}`);
     renderAll();
-    await sleep(800);
+    await sleep(ms);
     landHit(attacker, target, pa, info, ca);
     return;
   }
 
-  // 합
-  const cd = rollCoins(target, defenseCoins(armors));
-  const def = armorDef(target, armors);
-  const pd = def + coinSum(cd);
-  const result = pa > pd ? 'atk' : pd > pa ? 'def' : 'tie';
-  showClash(attacker, info, ca, pa, target, armors, cd, pd, result);
-  log(`⚔ 합! ${pname(attacker)} <b>${pa}</b> ${coinsHTML(ca)} vs ${coinsHTML(cd)} <b>${pd}</b> ${pname(target)} ${armors.map(cname).join(' + ')}`);
-  renderAll();
-  await sleep(1200);
-
-  // 방어구 코인: 앞면이면 효과
-  for (const r of cd) if (r.head) applyEffects((r.coin.fx || []).filter((e) => e.when === 'heads'), target, attacker);
-
-  if (result === 'atk') {
-    log(`${pname(attacker)} 합 승리! ${pa - pd} 피해`);
-    changeSp(attacker, 5, true);
-    changeSp(target, -5, true);
-    landHit(attacker, target, pa - pd, info, ca);
-  } else if (result === 'def') {
-    floatText(target, '합 승리', 'sp');
-    log(`${pname(target)} 합 승리! 공격을 완전히 막아냈습니다.`);
-    changeSp(target, 5, true);
-    changeSp(attacker, -5, true);
-    for (const ar of armors) applyEffects((ar.effects || []).filter((e) => e.when === 'hit'), target, attacker);
+  // ---- 수비 스킬: 가드 / 회피 / 반격 ----
+  const cd = rollCoins(target, prepareCoins(target, defenseCoins(dcards), { foe: attacker, clash: true }));
+  const base = armorDef(target, dcards);
+  const pd = base + coinSum(cd);
+  const kindName = DEF_KIND[resp.mode];
+  const headFx = () => { for (const r of cd) if (r.head) applyEffects((r.coin.fx || []).filter((e) => e.when === 'heads'), target, attacker); };
+  const successFx = () => {
+    for (const c of dcards) applyEffects((c.effects || []).filter((e) => e.when === 'hit'), target, attacker);
     for (const r of cd) applyEffects((r.coin.fx || []).filter((e) => e.when === 'hit'), target, attacker);
-    if (armors.some((x) => hasFx(x, 'reflect'))) {
-      const back = Math.floor(pa / 2);
+  };
+
+  if (resp.mode === 'guard') {
+    const dmg = Math.max(0, pa - pd);
+    const ms = showClash(attacker, info, ca, pa, target, dcards, cd, pd, 'guard', dmg ? 'atk' : 'def', dmg, dmg ? 'd' : '', base);
+    log(`🛡 가드! ${pname(attacker)} <b>${pa}</b> ${coinsHTML(ca)} vs ${coinsHTML(cd)} <b>${pd}</b> ${pname(target)} ${dcards.map(cname).join(' + ')}`);
+    renderAll();
+    await sleep(ms);
+    headFx();
+    if (dmg === 0) {
+      floatText(target, '가드!', 'block');
+      log(`${pname(target)} 가드로 공격을 완전히 막아냈습니다.`);
+      changeSp(target, 5, true); changeSp(attacker, -3, true);
+      successFx();
+    } else {
+      log(`${pname(target)} 가드로 ${pa - dmg} 경감 — ${dmg} 피해`);
+      landHit(attacker, target, dmg, info, ca);
+    }
+    if (dcards.some((x) => hasFx(x, 'reflect'))) {
+      const back = Math.floor(Math.min(pa, pd) / 2);
       if (back > 0) damage(attacker, back, '🪞 반사 피해', target);
     }
+    return;
+  }
+
+  const success = pd >= pa;
+  const card = dcards[0];
+  const ms = showClash(attacker, info, ca, pa, target, dcards, cd, pd, resp.mode, success ? 'def' : 'atk',
+    success ? (resp.mode === 'counter' ? pd : 0) : pa, success ? (resp.mode === 'counter' ? 'a' : '') : 'd', base);
+  log(`${resp.mode === 'evade' ? '💨' : '↩'} ${kindName}! ${pname(attacker)} <b>${pa}</b> ${coinsHTML(ca)} vs ${coinsHTML(cd)} <b>${pd}</b> ${pname(target)} ${cname(card)}`);
+  renderAll();
+  await sleep(ms);
+  headFx();
+  if (!success) {
+    log(`${pname(target)} ${kindName} 실패 — 공격을 그대로 받습니다`);
+    landHit(attacker, target, pa, info, ca);
+    return;
+  }
+  successFx();
+  if (resp.mode === 'evade') {
+    floatText(target, '회피!', 'block');
+    log(`${pname(target)} 공격을 회피했습니다!`);
+    changeSp(target, 5, true); changeSp(attacker, -3, true);
   } else {
-    log('합 무승부 — 공격과 방어가 상쇄되었습니다.');
-    floatText(target, '상쇄', 'block');
+    floatText(target, '반격!', 'sp');
+    log(`${pname(target)} 반격 성공! ${pd} 피해로 되받아칩니다`);
+    changeSp(target, 5, true); changeSp(attacker, -5, true);
+    landHit(target, attacker, pd, defenseInfo(card, pd), []);
   }
 }
 
-function showClash(attacker, info, ca, pa, target, armors, cd, pd, result) {
-  const aSide = `
-    <div class="clash-side">
-      <div>${pname(attacker)}</div>
-      <div class="stage-cards">${info.cards.map((c) => cardHTML(c, { big: true })).join('')}</div>
-      ${ca ? `<div class="coins">${coinsHTML(ca)}</div>
-      <div class="clash-pow ${result === 'atk' || result === 'open' ? 'win' : result === 'def' ? 'lose' : ''}">${pa}</div>` : ''}
-    </div>`;
-  let dSide;
-  if (result === 'open') {
-    dSide = `<div class="clash-side"><div>${pname(target)}</div><div class="open-guard">${has(target, 'staggered') ? '💢 흐트러짐' : '무방비'}</div></div>`;
-  } else {
-    dSide = `
-      <div class="clash-side">
-        <div>${pname(target)}</div>
-        <div class="stage-cards">${armors.map((c) => cardHTML(c, { big: true })).join('')}</div>
-        ${cd ? `<div class="coins">${coinsHTML(cd)}</div>
-        <div class="clash-pow ${result === 'def' ? 'win' : result === 'atk' ? 'lose' : ''}">${pd}</div>` : '<div class="clash-pow win">무효</div>'}
-      </div>`;
-  }
-  popStage(`
-    <div class="stage-head">${result === 'open' ? '⚔ 공격' : '⚔ <b>합</b> ⚔'}</div>
-    <div class="clash">${aSide}<div class="clash-vs">VS</div>${dSide}</div>`);
+// 2D 합 연출: 데이터를 만들어 이 화면에서 재생하고, 참가자에게도 보냄. 연출 길이(ms) 반환
+//  mode: open | clash | guard | evade | counter | nullify,  result: atk(공격 측 우세) | def(수비 측 우세) | tie ...
+//  dmg / dmgTo: 연출에 표시할 피해와 받는 쪽('d' 대상, 'a' 공격자)
+function showClash(attacker, info, ca, pa, target, dcards, cd, pd, mode, result, dmg = 0, dmgTo = '', dBase = 0, extra = {}) {
+  const pack = (rolls) => (rolls || []).map((r) => ({ h: r.head ? 1 : 0, p: r.power, r: r.reused || 0 }));
+  const d = validateClash({
+    aN: extra.aN, dN: extra.dN,
+    rounds: (extra.rounds || []).map((r) => ({ a: pack(r.a), d: pack(r.d), pa: r.pa, pd: r.pd, w: r.w })),
+    strike: extra.strike ? { s: extra.strike.s, coins: pack(extra.strike.coins) } : null,
+    aId: attacker.id, dId: target.id, mode, result,
+    aBase: info.atk, dBase, aCoins: pack(ca), dCoins: pack(cd), pa: pa || 0, pd: pd || 0,
+    aCards: info.cards.map(cardRef), dCards: dcards.map(cardRef),
+    gear: info.cards[0].type === 'ego' ? 'orb' : 'blade', attr: info.attr,
+    stag: has(target, 'staggered') ? 1 : 0, spd: G.speed, dmg, dmgTo,
+  });
+  renderClash(d);
+  netFx('clash', d);
+  return clashDuration(d);
 }
 
 // 피해 적중 공통 처리
@@ -678,7 +828,7 @@ async function useSupport(p, card, target) {
     log(`${pname(p)} 정신력 ${card.power} 회복`);
   } else if (kind === 'won') {
     gainWon(p, card.power);
-    log(`${pname(p)} ${card.power}원 획득`);
+    log(`${pname(p)} ${card.power}안 획득`);
   } else if (kind === 'cure') {
     cureAll(p);
     floatText(p, '정화', 'heal');
@@ -691,7 +841,7 @@ async function useSupport(p, card, target) {
     if (roll === 0) { heal(p, 25); log('📦 상자 속에는 구급 상자가! HP 25 회복'); }
     else if (roll === 1) { damage(p, 12, '📦 상자가 폭발했다!'); }
     else if (roll === 2) { changeSp(p, 15); log('📦 상자 속에는 진정 향초가! 정신력 15 회복'); }
-    else if (roll === 3) { gainWon(p, 25); log('📦 상자 속에는 현금 다발이! 25원 획득'); }
+    else if (roll === 3) { gainWon(p, 25); log('📦 상자 속에는 현금 다발이! 25안 획득'); }
     else { const n = drawCards(p, 3); log(`📦 상자 속에서 카드 ${n}장 발견!`); }
   } else if (kind === 'steal') {
     if (target.hand.length) {
@@ -749,7 +899,7 @@ async function tradeBuy(p, card, target, decide) {
   }
   const item = pick(target.hand);
   const price = item.price || 0;
-  showStage(p, [item], `${pname(target)}의 카드`, `가격 <b class="won">₩${price}</b>`);
+  showStage(p, [item], `${pname(target)}의 카드`, `가격 <b class="won">${price}안</b>`);
   renderAll();
   await sleep(500);
   const ok = p.won >= price && (await decide(item)) === true;
@@ -761,7 +911,7 @@ async function tradeBuy(p, card, target, decide) {
   target.hand.splice(target.hand.indexOf(item), 1);
   giveCard(p, item);
   log(`🛒 ${pname(p)} 이(가) ${pname(target)}에게서 ${cname(item)}을(를) 매입 (${paid})`);
-  toastTo(target, `「${item.name}」을(를) ₩${price}에 매입당했습니다`, 'bad');
+  toastTo(target, `「${item.name}」을(를) ${price}안에 매입당했습니다`, 'bad');
   renderAll();
   await sleep(600);
 }
@@ -771,14 +921,14 @@ async function tradeSell(p, card, goods, target) {
   discardCard(p, card);
   p.hand.splice(p.hand.indexOf(goods), 1);
   const price = goods.price || 0;
-  showStage(p, [card, goods], pname(target), `판매가 <b class="won">₩${price}</b> — 거부할 수 없음`);
-  log(`💸 ${pname(p)} 이(가) ${pname(target)}에게 ${cname(goods)}을(를) ₩${price}에 강매`);
+  showStage(p, [card, goods], pname(target), `판매가 <b class="won">${price}안</b> — 거부할 수 없음`);
+  log(`💸 ${pname(p)} 이(가) ${pname(target)}에게 ${cname(goods)}을(를) ${price}안에 강매`);
   renderAll();
   await sleep(700);
   const paid = pay(target, p, price);
   if (target.alive) giveCard(target, goods); else toDiscard(target, goods);
   log(`${pname(target)} 지불: ${paid}`);
-  toastTo(target, `「${goods.name}」을(를) ₩${price}에 강매당했습니다`, 'bad');
+  toastTo(target, `「${goods.name}」을(를) ${price}안에 강매당했습니다`, 'bad');
   renderAll();
   await sleep(600);
 }
@@ -802,16 +952,16 @@ function validExchange(p, plan) {
 async function tradeExchange(p, card, plan) {
   if (!validExchange(p, plan)) return false;
   discardCard(p, card);
-  const before = `HP ${p.hp} / SP ${p.sp} / ₩${p.won}`;
+  const before = `HP ${p.hp} / SP ${p.sp} / ${p.won}안`;
   const dhp = plan.hp - p.hp, dsp = plan.sp - p.sp, dwon = plan.won - p.won;
   p.hp = plan.hp;
   p.sp = plan.sp;
   p.won = plan.won;
-  showStage(p, [card], pname(p), `${before} → <b>HP ${p.hp} / SP ${p.sp} / ₩${p.won}</b>`);
-  log(`💱 ${pname(p)} 환전: ${before} → HP ${p.hp} / SP ${p.sp} / ₩${p.won}`);
+  showStage(p, [card], pname(p), `${before} → <b>HP ${p.hp} / SP ${p.sp} / ${p.won}안</b>`);
+  log(`💱 ${pname(p)} 환전: ${before} → HP ${p.hp} / SP ${p.sp} / ${p.won}안`);
   if (dhp) floatText(p, (dhp > 0 ? '+' : '') + dhp, dhp > 0 ? 'heal' : 'dmg');
   else if (dsp) floatText(p, (dsp > 0 ? '+' : '') + dsp + ' SP', dsp > 0 ? 'sp' : 'spdown');
-  else if (dwon) floatText(p, (dwon > 0 ? '+' : '') + dwon + '원', 'won');
+  else if (dwon) floatText(p, (dwon > 0 ? '+' : '') + dwon + '안', 'won');
   renderAll();
   await sleep(700);
   return true;
@@ -1027,6 +1177,7 @@ function startMatch(cfg) {
   G.over = false;
   G.acting = false;
   G.humanResolve = null;
+  G.defendReq = null;
   G.hover = null;
   G.sel = { main: null, plus: [], target: null, goods: null };
   G.defs = {};
@@ -1035,6 +1186,7 @@ function startMatch(cfg) {
   G.players = cfg.players.map((x, i) => {
     const p = makePlayer(i, x.name, x.avatar, x.ctrl);
     p.cid = x.cid;
+    p.look = normalizeLook(x.look) || randomLook(x.name);
     p.packName = x.pack ? x.pack.name : '';
     p.packDefs = x.pack && x.pack.cards.length ? nsCards(x.pack.cards, `p${i}`) : [];
     registerDefs(p.packDefs);

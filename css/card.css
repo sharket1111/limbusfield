@@ -1,0 +1,108 @@
+/* ============================================================
+   카드 디자인 — 팔각 그림 액자 + 물감 장식 + 속성 배지 + 이름 띠 + 코인
+   색은 카드의 죄악 색 (--sin, --sin2 어두운 색, --sin3 밝은 색)
+   ============================================================ */
+.card {
+  --oct: polygon(20% 0, 80% 0, 100% 20%, 100% 80%, 80% 100%, 20% 100%, 0 80%, 0 20%);
+  width: 112px; height: 166px; padding: 0; border: 0; border-radius: 0; background: none !important; box-shadow: none !important;
+  overflow: visible; display: flex; flex-direction: column; align-items: center; color: #f4efe6; position: relative;
+}
+.card::before { display: none !important; }
+.card .c-top, .card .c-tags { display: none; }
+
+/* 그림 액자 */
+.c-art-wrap { position: relative; width: 100%; height: 112px; flex: 0 0 auto; }
+.c-splat { position: absolute; left: -6%; top: -6%; width: 112%; height: 104%; overflow: visible; fill: var(--sin); opacity: .95; pointer-events: none; }
+.c-art { position: absolute; left: 9px; right: 9px; top: 3px; bottom: 13px; clip-path: var(--oct);
+  background: linear-gradient(155deg, var(--sin3), var(--sin) 40%, var(--sin2)); }
+.c-art-in { position: absolute; inset: 4px; clip-path: var(--oct); overflow: hidden;
+  background: radial-gradient(circle at 50% 30%, #2c2630, #0d0b10 75%); background-size: cover; background-position: center; }
+.c-glyph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 46px; opacity: .2; filter: grayscale(.3); padding-bottom: 14px; }
+.c-kw { position: absolute; top: 19px; left: 0; right: 0; text-align: center; font-size: 11px; letter-spacing: 1px; filter: drop-shadow(0 1px 1px #000); }
+.c-stat { position: absolute; left: 0; right: 0; bottom: 15px; text-align: center; font-family: 'Noto Serif KR', serif; font-weight: 900; font-size: 32px; line-height: 1;
+  color: #fff; text-shadow: 0 0 8px var(--sin), 0 2px 2px #000; }
+.c-stat small { font-size: 10px; margin-left: 1px; }
+.c-stat.atk { color: #ffe3dc; }
+.c-stat.def { color: #dfeaff; }
+.c-stat.def.k-evade { color: #d8fff4; }
+.c-stat.def.k-counter { color: #ffdcee; }
+.c-sub { position: absolute; left: 0; right: 0; top: 5px; text-align: center; font-size: 9.5px; font-weight: 700; color: #e9e2ee; text-shadow: 0 1px 2px #000; }
+.c-art-in.has-img .c-stat { text-shadow: 0 0 6px #000, 0 0 10px var(--sin), 0 2px 2px #000; }
+
+/* 아래쪽 속성 배지 (육각) */
+.c-badge { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); width: 28px; height: 28px; z-index: 2;
+  clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0 50%); background: var(--sin3); }
+.c-badge span { position: absolute; inset: 2.5px; clip-path: inherit; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(160deg, #3a3340, #141118); font-size: 13px; }
+
+/* 이름 띠 */
+.c-ribbon { display: flex; align-items: center; width: 108%; margin-top: 2px; position: relative; z-index: 2; }
+.c-sin { flex: 0 0 auto; width: 19px; height: 19px; display: flex; align-items: center; justify-content: center; margin-right: -3px; z-index: 1;
+  clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0 50%); background: radial-gradient(circle at 40% 35%, var(--sin3), var(--sin) 60%, var(--sin2));
+  font-size: 9px; font-weight: 900; color: #fff; text-shadow: 0 1px 1px #000; }
+.c-name { flex: 1; min-width: 0; position: relative; padding: 3px 14px 3px 7px; font-size: 10.5px; font-weight: 900; line-height: 1.15; color: #fff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; letter-spacing: -.02em;
+  text-shadow: 0 1px 0 #000, 0 0 3px #000; background: linear-gradient(90deg, var(--sin2), var(--sin) 35%, var(--sin2));
+  clip-path: polygon(0 0, 100% 0, calc(100% - 9px) 100%, 0 100%); }
+.c-name::after { content: ''; position: absolute; right: 9px; top: 0; bottom: 0; width: 14px;
+  background: repeating-linear-gradient(115deg, transparent 0 2px, rgba(0, 0, 0, .45) 2px 3.5px); }
+
+/* 코인 줄 */
+.c-coinrow { display: flex; justify-content: center; gap: 2px; margin-top: 3px; min-height: 14px; }
+.c-coinrow i { width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; font-style: normal; font-size: 8px; font-weight: 900; color: #3a2008;
+  clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
+  background: radial-gradient(circle at 40% 35%, #ffd9a0, #c9813a 55%, #7a4a1d); }
+.c-coinrow i.fx { background: radial-gradient(circle at 40% 35%, #ffe4f0, #e0607e 55%, #8a2a44); color: #3a0818; }
+
+/* 코스트 / 가격 */
+.c-cost { position: absolute; left: 1px; top: 0; z-index: 3; min-width: 17px; height: 17px; padding: 0 3px; display: flex; align-items: center; justify-content: center;
+  border-radius: 50% 50% 50% 0; background: var(--cost-bg); color: var(--cost-fg); font-size: 10px; font-weight: 900; border: 1px solid var(--sin); }
+.c-price { position: absolute; right: 1px; bottom: 0; font-size: 9.5px; font-weight: 700; color: var(--won); }
+
+/* 희귀도 */
+.card.r2 .c-art-wrap { filter: drop-shadow(0 0 3px var(--sin)); }
+.card.r3 .c-art-wrap { filter: drop-shadow(0 0 5px #ffd23f) drop-shadow(0 0 2px var(--sin3)); }
+
+/* 선택 상태 */
+.card { transition: transform .15s, filter .15s; }
+#hand .card:hover { transform: translateY(-8px); }
+.card.sel-main { transform: translateY(-14px) !important; filter: drop-shadow(0 0 7px var(--red)) drop-shadow(0 0 2px var(--red)); }
+.card.sel-plus { transform: translateY(-10px) !important; filter: drop-shadow(0 0 6px #ff9d4a); }
+.card.sel-goods { transform: translateY(-10px) !important; filter: drop-shadow(0 0 6px var(--won)); }
+.card.sel-def { transform: translateY(-14px) !important; filter: drop-shadow(0 0 7px var(--blue)) drop-shadow(0 0 2px var(--blue)); }
+.card.can-plus { filter: drop-shadow(0 0 3px #ff9d4a); }
+.card.no-sp, .card.cant { opacity: .38; filter: grayscale(.7); }
+.card.def-ok { filter: drop-shadow(0 0 3px var(--blue)); }
+.card.big { width: 128px; height: 188px; }
+.card.big .c-art-wrap { height: 128px; }
+.card.big .c-stat { font-size: 38px; }
+.card.big .c-name { font-size: 12px; }
+.def-slot.chosen .card, .card.night-gallery { box-shadow: none; }
+.card.night-gallery { width: 104px; height: 148px; background: var(--night-card) !important; border: 2px solid #3b4a8a; border-radius: 6px; justify-content: center; }
+#hand { min-height: 186px; padding-top: 16px; }
+
+/* 대응(수비) 중 안내 */
+.def-banner { display: flex; flex-direction: column; gap: 3px; padding: 6px 10px; border-left: 3px solid var(--red); background: linear-gradient(90deg, rgba(224, 67, 59, .18), transparent); }
+.def-banner b.big { font-size: 15px; color: var(--red); }
+.me-card.under-attack { box-shadow: inset 3px 0 0 var(--red), 0 0 0 2px var(--red), 0 0 22px #e0433b66; animation: alarm 1s ease-in-out infinite alternate; }
+@keyframes alarm { to { box-shadow: inset 3px 0 0 var(--red), 0 0 0 2px var(--red), 0 0 8px #e0433b33; } }
+
+@media (max-width: 760px) {
+  .card { width: 96px; height: 146px; }
+  .c-art-wrap { height: 96px; }
+  .c-stat { font-size: 26px; }
+  .c-glyph { font-size: 36px; }
+  .c-name { font-size: 9.5px; }
+  .card.big { width: 104px; height: 156px; }
+  .card.big .c-art-wrap { height: 104px; }
+  #hand { min-height: 166px; }
+}
+
+/* 공방: 죄악 선택지 색 */
+select[data-f="sin"] option[value="wrath"] { color: #d8342b; }
+select[data-f="sin"] option[value="lust"] { color: #e8731c; }
+select[data-f="sin"] option[value="sloth"] { color: #c99a10; }
+select[data-f="sin"] option[value="gluttony"] { color: #6a9a18; }
+select[data-f="sin"] option[value="gloom"] { color: #2a9fc4; }
+select[data-f="sin"] option[value="pride"] { color: #2f55c2; }
+select[data-f="sin"] option[value="envy"] { color: #8a3dbf; }

@@ -118,29 +118,72 @@ async function cpuTurn(p) {
   await sleep(600);
 }
 
-// 방어: 낼 방어구 목록을 돌려줌 (내면 무기 vs 방어구 합)
+// 대응 선택: { mode: none|clash|guard|evade|counter, cards }
+// 각 선택지의 "예상 받는 피해 − 예상 주는 피해 + 카드 소모 비용"이 가장 낮은 것을 고름
 function cpuDefend(p, info, attacker) {
-  const usable = p.hand.filter((c) => c.type === 'armor' && armorMatches(c, info.attr));
-  if (!usable.length) return [];
-  if (G.difficulty === 'easy') return Math.random() < 0.6 ? [pick(usable)] : [];
+  const none = { mode: 'none', cards: [] };
+  const pierce = info.fx.includes('pierce');
+  const usable = (c) => c.type === 'armor' && armorMatches(c, info.attr);
+  const weapons = p.hand.filter((c) => c.type === 'weapon');
+  const guards = p.hand.filter((c) => usable(c) && defKind(c) === 'guard' && !pierce);
+  const evades = p.hand.filter((c) => usable(c) && defKind(c) === 'evade');
+  const counters = p.hand.filter((c) => usable(c) && defKind(c) === 'counter');
 
-  const nullify = usable.find((c) => hasFx(c, 'nullify'));
-  if (nullify && info.atk >= 16) return [nullify];
-
-  const normal = usable.filter((c) => !hasFx(c, 'nullify')).sort((a, b) => b.def - a.def);
-  if (info.atk <= 5 && p.hp > 30) return [];
-
-  // 합 승률이 충분해질 때까지 방어구를 쌓음
-  const want = G.difficulty === 'hard' ? 0.7 : 0.55;
-  const chosen = [];
-  for (const c of normal) {
-    chosen.push(c);
-    const st = clashStats(info.atk, info.coins, attacker.sp, armorDef(p, chosen), defenseCoins(chosen), p.sp, true);
-    if (st.win + st.tie >= want) break;
+  const base = clashStats(info.atk, info.coins, attacker.sp, 0, [], p.sp, false);
+  if (G.difficulty === 'easy') {
+    const opts = [];
+    if (guards.length) opts.push({ mode: 'guard', cards: [pick(guards)] });
+    if (evades.length) opts.push({ mode: 'evade', cards: [pick(evades)] });
+    if (counters.length) opts.push({ mode: 'counter', cards: [pick(counters)] });
+    if (weapons.length) opts.push({ mode: 'clash', cards: [pick(weapons)] });
+    return opts.length && Math.random() < 0.7 ? pick(opts) : none;
   }
-  // 여유가 있으면 방어구를 1장만 쓰기
-  if (G.difficulty === 'normal' && p.hp - info.atk > 45 && chosen.length > 1) return chosen.slice(0, 1);
-  return chosen;
+  // 위험 회피 성향: 체력이 낮을수록 받는 피해를 더 무겁게
+  const fear = p.hp < 35 ? 1.6 : p.hp < 60 ? 1.2 : 1;
+  const cost = (cards) => cards.reduce((s, c) => s + cardUse(c), 0) * (G.difficulty === 'hard' ? 0.25 : 0.35);
+  let best = { ...none, score: base.expA * fear };
+  if (info.atk + info.coinMax <= 6 && p.hp > 40) return none;   // 약한 공격은 그냥 맞음
+
+  const consider = (mode, cards, taken, dealt) => {
+    const score = taken * fear - dealt * 0.8 + cost(cards);
+    if (score < best.score) best = { mode, cards, score };
+  };
+
+  // 무효화 가드
+  const nullify = guards.find((c) => hasFx(c, 'nullify'));
+  if (nullify && info.atk >= 16) consider('guard', [nullify], 0, 0);
+
+  // 가드: 방어력이 높은 것부터 하나씩 쌓아 보며 가장 좋은 조합
+  const gsorted = guards.filter((c) => !hasFx(c, 'nullify')).sort((a, b) => b.def - a.def);
+  const gset = [];
+  for (const c of gsorted) {
+    gset.push(c);
+    const st = clashStats(info.atk, info.coins, attacker.sp, armorDef(p, gset), defenseCoins(gset), p.sp, true);
+    consider('guard', [...gset], st.exp, 0);
+  }
+  // 회피 / 반격
+  for (const c of evades) {
+    const st = clashStats(info.atk, info.coins, attacker.sp, armorDef(p, [c]), defenseCoins([c]), p.sp, true);
+    consider('evade', [c], (1 - st.win - st.tie) * st.expA, 0);
+  }
+  for (const c of counters) {
+    const st = clashStats(info.atk, info.coins, attacker.sp, armorDef(p, [c]), defenseCoins([c]), p.sp, true);
+    const ok = st.win + st.tie;
+    const pow = armorDef(p, [c]) + defenseCoins([c]).reduce((s, x) => s + x.power * headChance(p.sp), 0);
+    consider('counter', [c], (1 - ok) * st.expA, ok * pow);
+  }
+  // 합: 무기(+보조 무기)
+  const pluses = weapons.filter((c) => c.plus);
+  for (const w of weapons) {
+    const sets = [[w]];
+    if (G.difficulty === 'hard') { const extra = pluses.filter((x) => x !== w); if (extra.length) sets.push([w, ...extra]); }
+    for (const set of sets) {
+      const dinfo = buildAttack(set);
+      const st = clashSim(info.atk, info.coins, attacker.sp, dinfo.atk, dinfo.coins, p.sp, 200);
+      consider('clash', set, st.exp, st.expD);
+    }
+  }
+  return { mode: best.mode, cards: best.cards };
 }
 
 // ------------------------------------------------------------
@@ -149,7 +192,7 @@ function cpuDefend(p, info, attacker) {
 // 카드의 '쓸모' (낮을수록 팔아치우기 좋음)
 function cardUse(c) {
   if (c.type === 'weapon') return c.atk + fxOf(c).length * 3;
-  if (c.type === 'armor') return c.def * 0.9 + fxOf(c).length * 6;
+  if (c.type === 'armor') return c.def * ({ guard: 0.9, evade: 1, counter: 1.1 }[defKind(c)] || 0.9) + fxOf(c).length * 6;
   if (c.type === 'ego') return 14;
   if (c.type === 'trade') return 8;
   if (c.kind === 'custom') return 8;

@@ -4,13 +4,29 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Anomaly Field</title>
+  <script>
+    // 저장한 테마(없으면 기기 설정)를 그리기 전에 적용
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem('af_theme'); } catch (e) { /* 무시 */ }
+      if (t !== 'light' && t !== 'dark') t = window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/arena.css">
+  <link rel="stylesheet" href="css/frame.css">
+  <link rel="stylesheet" href="css/card.css">
 </head>
 <body>
+  <!-- 전투 시네마틱 (합 연출을 전체 화면으로) -->
+  <div id="cine" class="cine" aria-hidden="true"></div>
+
   <!-- 타이틀 -->
   <section id="title" class="screen show">
+    <button class="btn theme-toggle title-theme" title="다크 / 라이트 모드">🌙</button>
     <div class="title-wrap">
       <div class="logo">
         <div class="logo-sub">THE CITY · DISTRICT 00</div>
@@ -55,6 +71,7 @@
         <button class="btn open-rules">규칙</button>
         <button class="btn" id="btn-gallery">카드 도감</button>
         <button class="btn" id="btn-workshop">🛠 카드 공방</button>
+        <button class="btn" id="btn-char">🎨 캐릭터 꾸미기</button>
       </div>
       <div id="custom-info" class="muted small"></div>
       <div id="stats" class="muted"></div>
@@ -66,6 +83,7 @@
     <header class="topbar">
       <div class="brand">🌐 멀티 플레이</div>
       <div class="spacer"></div>
+      <button class="btn theme-toggle" title="다크 / 라이트 모드">🌙</button>
       <button class="btn small" id="mp-back">← 타이틀</button>
     </header>
 
@@ -143,12 +161,34 @@
     </div>
   </section>
 
+  <!-- 캐릭터 꾸미기 -->
+  <section id="charedit" class="screen">
+    <header class="topbar">
+      <div class="brand">🎨 캐릭터 꾸미기</div>
+      <div class="muted small">합을 칠 때 무대에 나오는 내 캐릭터입니다. 멀티 플레이에서도 상대에게 보여요</div>
+      <div class="spacer"></div>
+      <button class="btn theme-toggle" title="다크 / 라이트 모드">🌙</button>
+      <button class="btn small" id="ce-back">← 타이틀</button>
+    </header>
+    <div class="ce-wrap">
+      <div class="ce-left">
+        <div id="ce-preview"></div>
+        <div class="ce-actions">
+          <button class="btn" id="ce-random">🎲 무작위</button>
+          <button class="btn primary" id="ce-save">💾 저장</button>
+        </div>
+      </div>
+      <div id="ce-form" class="ce-form"></div>
+    </div>
+  </section>
+
   <!-- 카드 공방 -->
   <section id="workshop" class="screen">
     <header class="topbar">
       <div class="brand">🛠 카드 공방</div>
       <div class="muted small">카드팩은 이 브라우저에 저장됩니다. 내보내기로 백업·공유하세요</div>
       <div class="spacer"></div>
+      <button class="btn theme-toggle" title="다크 / 라이트 모드">🌙</button>
       <button class="btn small" id="ws-back">← 타이틀</button>
     </header>
     <div class="ws-packbar">
@@ -190,6 +230,8 @@
       <select id="in-speed-game" title="속도">
         <option value="1.6">느림</option><option value="1" selected>보통</option><option value="0.5">빠름</option>
       </select>
+      <button class="btn small" id="btn-cine" title="전투 연출 방식">🎬 전체 화면</button>
+      <button class="btn theme-toggle" title="다크 / 라이트 모드">🌙</button>
       <button class="btn small open-rules">규칙</button>
     </header>
 
@@ -240,20 +282,26 @@
     <div class="panel rules">
       <h2>규칙</h2>
       <ul>
-        <li>모든 플레이어는 <b>HP 100</b>, <b>정신력 0</b>, <b>흐트러짐 40</b>, <b>20원</b>, 카드 7장으로 시작합니다. HP가 0이 되면 탈락, 마지막 1명이 승리합니다.</li>
+        <li>모든 플레이어는 <b>HP 100</b>, <b>정신력 0</b>, <b>흐트러짐 40</b>, <b>20안</b>, 카드 7장으로 시작합니다. HP가 0이 되면 탈락, 마지막 1명이 승리합니다.</li>
         <li>자기 턴이 시작되면 카드를 1장 뽑습니다. (손패 최대 10장)</li>
         <li><b>무기</b>로 상대 1명을 공격합니다. <b>보조</b> 표시가 있는 무기는 다른 무기에 덧붙여 공격력을 합칠 수 있습니다. 공격하면 턴이 끝납니다.</li>
-        <li><b>합 (무기 vs 방어구)</b> — 공격 위력 = 공격력 + 코인(기본 3개, 앞면당 +2). 공격받은 쪽이 <b>방어구</b>를 내면 합이 벌어집니다. 방어 위력 = 방어력 합계 + 코인.
-          공격이 이기면 <b>차이만큼</b> 피해, 방어가 이기면 완전히 막고, 같으면 상쇄. 방어구를 안 내면 공격 위력 그대로 맞습니다.</li>
-        <li>방어구는 공격과 <b>같은 속성</b> 또는 <b>전속성</b>일 때만 낼 수 있습니다. 속성: ⚔물리 · 🔥화염 · ❄냉기 · ✦광휘 · ☾그림자</li>
-        <li><b>💢 흐트러짐</b> — 피격 피해만큼 흐트러짐 게이지(40)가 줄고, 0이 되면 <b>흐트러짐</b>: 다음 턴을 쉬고, 그동안 <b>방어구를 낼 수 없으며 받는 피해가 1.5배</b>가 됩니다.
+        <li><b>공격받았을 때의 대응</b> — 화면 아래 <b>손패에서 카드를 골라</b> 대응합니다 (쓸 수 있는 카드는 빛나고, 못 쓰는 카드는 흐려짐). 고른 카드에 따라 아래 중 하나로 정해집니다. 공격 위력 = 공격력 + 코인(기본 3개, 앞면당 +2).
+          <ul>
+            <li><b>⚔ 합</b>: 내 <b>무기</b>(+보조 무기)로 맞받아칩니다. 서로 <b>남은 코인을 다시 던져</b> 위력을 비교하고, 진 쪽은 <b>코인 1개가 깨집니다</b>. 이걸 반복해 <b>코인이 모두 깨진 쪽이 합에서 집니다</b>. 이긴 쪽은 <b>남은 코인</b>으로 공격해 (공격력 + 앞면 코인) 피해를 주고, 그 무기의 적중 효과가 발동합니다. 속성 제한 없음. 10합이 넘으면 상쇄.</li>
+            <li><b>🛡 가드</b>: 가드 카드를 <b>여러 장 동시에</b> 냅니다. 받는 피해 = 공격 위력 − 가드 위력(수비 위력 합계 + 코인). 관통 공격에는 쓸 수 없습니다.</li>
+            <li><b>💨 회피</b>: 회피 카드 1장. 회피 위력 ≥ 공격 위력이면 <b>피해 0</b>(정신력 +5), 아니면 공격을 그대로 다 받습니다.</li>
+            <li><b>↩ 반격</b>: 반격 카드 1장. 반격 위력 ≥ 공격 위력이면 공격을 막고 <b>반격 위력만큼 되받아칩니다</b>. 아니면 그대로 다 받습니다.</li>
+            <li>가드·회피·반격 카드는 공격과 <b>같은 속성</b> 또는 <b>전속성</b>일 때만 쓸 수 있습니다.</li>
+          </ul></li>
+        <li>속성: ⚔물리 · 🔥화염 · ❄냉기 · ✦광휘 · ☾그림자</li>
+        <li><b>💢 흐트러짐</b> — 피격 피해만큼 흐트러짐 게이지(40)가 줄고, 0이 되면 <b>흐트러짐</b>: 다음 턴을 쉬고, 그동안 <b>합·가드·회피·반격을 할 수 없으며 받는 피해가 1.5배</b>가 됩니다.
           쉬는 턴이 끝나면 게이지가 가득 찹니다. 자기 턴이 올 때마다 게이지 +5. 〰진동 폭발과 「흐트러짐 피해」 효과로도 깎입니다.</li>
         <li><b>정신력(SP)</b> — -45 ~ +45. <b>코인 앞면 확률 = 50% + 정신력%</b> (최소 5%, 최대 95%).
           적중 +5, 합 승리 +5, 처치 +15, 기도 +10 / 피격 시 피해의 절반만큼 감소, 합 패배 -5, 누군가 쓰러지면 -5.
           <b>-45가 되면 공황</b>: 다음 턴을 쉬고 정신력이 0으로 돌아옵니다.</li>
         <li><b>E.G.O</b>는 <b>정신력을 소모</b>합니다 (정신력이 -45 아래로 떨어지면 사용 불가). 공격·강탈·기절은 턴을 끝내고, 회복·정화는 턴을 끝내지 않습니다.</li>
         <li><b>도구</b>는 턴을 끝내지 않고 자유롭게 쓸 수 있습니다 (상대를 대상으로 하는 도구는 턴 종료).</li>
-        <li><b>돈(원)</b> — 모든 카드에는 <b>가격</b>이 있고(E.G.O는 0원), 돈은 <b>거래 카드</b>로 사고팔 때 씁니다. 최대 99원.
+        <li><b>돈(안)</b> — 모든 카드에는 <b>가격</b>이 있고(E.G.O는 0안), 돈은 <b>거래 카드</b>로 사고팔 때 씁니다. 최대 99안.
           <ul>
             <li><b>🛒 매입</b>: 상대 손패에서 무작위로 1장이 공개되고, 살지 말지 고릅니다. 사면 그 가격을 상대에게 내고 가져옵니다. (턴 종료)</li>
             <li><b>💸 강매</b>: 내 카드 1장을 골라 상대에게 강제로 팝니다. 상대는 돈으로 내고, 돈이 모자라면 <b>정신력(0까지) → HP</b> 순으로 냅니다. (턴 종료)</li>
@@ -271,13 +319,20 @@
             <li>⚡ <b>충전</b> (자신): 최대 20. 「충전 소모」 코인 효과에 쓰임. 턴 종료 시 -1</li>
             <li>💔 취약: 방어력 절반 · 💫 기절: 다음 턴 건너뜀 · 😱 공황: 다음 턴 건너뜀</li>
           </ul></li>
-        <li><b>코인</b> — 카드마다 코인 개수와 코인별 위력·효과가 다를 수 있습니다. 「앞면 적중 시」 효과는 그 코인이 앞면이고 공격이 적중했을 때만 발동합니다.</li>
+        <li><b>코인</b> — 카드마다 코인 개수와 코인별 위력·효과가 다를 수 있습니다. 「앞면 적중 시」 효과는 그 코인이 앞면이고 공격이 적중했을 때만 발동합니다.
+          <ul>
+            <li><b>던지기 전 효과</b>: 충전 소모 / 일방 공격이면(상대가 방어구를 안 냄) / 합 중이면 / 상대에게 특정 키워드가 있으면 / 내 HP가 절반 이하면 / 내 정신력이 기준 이상이면 → 이 코인 위력 증가</li>
+            <li><b>↻ 코인 재사용</b>: 앞면이 나오면 같은 코인을 다시 던지고, 앞면이 나올 때마다 위력이 한 번 더 더해집니다 (최대 횟수까지)</li>
+            <li><b>키워드 폭발</b>: 대상의 출혈·화상·파열·침잠 위력만큼 즉시 피해(진동은 흐트러짐 피해)를 주고 횟수 -1</li>
+            <li><b>🛡 방어구 파괴</b>: 대상 손패의 방어구 1장을 무작위로 버리게 함 · <b>💰 안 빼앗기</b>: 대상의 돈을 가져옴</li>
+          </ul></li>
+        <li><b>죄악</b> — 카드마다 분노·색욕·나태·탐식·우울·오만·질투 중 하나의 색이 있습니다 (카드 공방에서 지정). 지금은 카드 색으로만 쓰입니다.</li>
         <li><b>코스트</b> — 모든 카드는 스펙(위력·코인·효과·특수 능력)에 따라 자동으로 <b>코스트 1~12</b>가 매겨집니다 (카드 왼쪽 위 숫자).
           카드팩의 코스트 합계(코스트 × 장수)는 <b>150 이하</b>여야 대전 규격입니다. 센 카드를 넣으면 넣을 수 있는 장수가 줄어듭니다. 개인 덱은 20장 이상 필요.</li>
         <li><b>🛠 카드 공방</b> — 카드팩을 여러 개 만들고, 종류·사진·코인별 위력과 효과를 정해 카드를 만들 수 있습니다.</li>
         <li><b>🌐 멀티 플레이</b> — 방을 만들고 코드를 공유하면 친구와 대전할 수 있습니다. 덱 방식: 공용 덱(모두 같은 덱에서 뽑기) 또는 개인 덱(각자 자기 팩).</li>
         <li><b>🌙 뒷골목의 밤</b> — 100턴(모든 플레이어 턴 합산)부터 시작. 카드를 뽑을 때 30% 확률로 카드 대신
-          <b>🧹 청소부</b>(10 / 20 / 30 피해) 또는 <b>🛢 연료통</b>(HP 10 / 정신력 10 / 10원 중 하나)이 나옵니다.</li>
+          <b>🧹 청소부</b>(10 / 20 / 30 피해) 또는 <b>🛢 연료통</b>(HP 10 / 정신력 10 / 10안 중 하나)이 나옵니다.</li>
       </ul>
       <button class="btn primary" id="rules-close">확인</button>
     </div>
@@ -301,6 +356,8 @@
   <script src="js/ui.js"></script>
   <script src="js/ai.js"></script>
   <script src="js/editor.js"></script>
+  <script src="js/character.js"></script>
+  <script src="js/scenery.js"></script>
   <script src="js/net.js"></script>
 </body>
 </html>
